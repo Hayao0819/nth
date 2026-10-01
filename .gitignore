@@ -1,0 +1,9 @@
+/coverage.out
+/build/
+/dist/
+/nth
+/go.work
+/go.work.sum
+/.direnv/
+/result
+/result-*

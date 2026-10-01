@@ -1,0 +1,128 @@
+package user
+
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/Hayao0819/nth/internal/components/navigation"
+	"github.com/Hayao0819/nth/internal/components/pageheader"
+	postcomponent "github.com/Hayao0819/nth/internal/components/post"
+	"github.com/Hayao0819/reactea/v2"
+)
+
+func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
+	innerWidth, room := d.layout(ctx.Width(), ctx.Height())
+	if command, handled := d.updateResult(ctx.Context(), msg, innerWidth, room); handled {
+		return command
+	}
+	if update, ok := msg.(postcomponent.ReactionUpdate); ok {
+		d.applyReaction(update)
+
+		return nil
+	}
+
+	var command tea.Cmd
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		return d.loadImages(ctx.Context(), ctx.Width(), d.user, d.posts)
+	case tea.MouseWheelMsg:
+		if _, _, inside := reactea.Mouse(ctx, msg); !inside {
+			return nil
+		}
+		if msg.Button == tea.MouseWheelDown {
+			d.offset += 3
+			command = d.loadNearEnd(ctx.Context(), innerWidth, room)
+		} else if msg.Button == tea.MouseWheelUp {
+			d.offset -= 3
+		}
+	case tea.MouseClickMsg:
+		return d.handleClick(ctx, msg, innerWidth, room)
+	}
+
+	switch {
+	case reactea.Key(msg, "esc", "left"):
+		return pageheader.Back()
+	case reactea.Key(msg, "j", "down"):
+		if len(d.posts) == 0 {
+			d.offset++
+		} else {
+			d.moveSelection(1, innerWidth, room)
+		}
+		command = d.loadNearEnd(ctx.Context(), innerWidth, room)
+	case reactea.Key(msg, "k", "up"):
+		if len(d.posts) == 0 {
+			d.offset--
+		} else {
+			d.moveSelection(-1, innerWidth, room)
+		}
+	case reactea.Key(msg, "ctrl+d", "pgdown", "space"):
+		d.offset += max(1, room/2)
+		command = d.loadNearEnd(ctx.Context(), innerWidth, room)
+	case reactea.Key(msg, "ctrl+u", "pgup"):
+		d.offset -= max(1, room/2)
+	case reactea.Key(msg, "g", "home"):
+		d.selected = 0
+		d.offset = 0
+	case reactea.Key(msg, "G", "end"):
+		if len(d.posts) > 0 {
+			d.selected = len(d.posts) - 1
+			d.ensureSelectionVisible(innerWidth, room)
+		} else {
+			d.offset = len(d.content(innerWidth).lines)
+		}
+		command = d.loadNearEnd(ctx.Context(), innerWidth, room)
+	case reactea.Key(msg, ".") && d.canRetry():
+		return d.retry(ctx.Context())
+	case reactea.Key(msg, "enter"):
+		if post := d.selectedPost(); post != nil {
+			return navigation.OpenPost(*post)
+		}
+	case reactea.Key(msg, "u"):
+		if post := d.selectedPost(); post != nil && post.DisplayPost() != nil {
+			return navigation.OpenUser(post.DisplayPost().Author)
+		}
+	case reactea.Key(msg, "r", "R"):
+		return d.requestSelected(postcomponent.Reply)
+	case reactea.Key(msg, "t"):
+		return d.requestSelected(postcomponent.Repost)
+	case reactea.Key(msg, "l", "f"):
+		return d.requestSelected(postcomponent.Like)
+	case reactea.Key(msg, "Q"):
+		return d.requestSelected(postcomponent.Quote)
+	}
+
+	d.clampOffset(innerWidth, room)
+
+	return command
+}
+
+func (d *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg, innerWidth, room int) tea.Cmd {
+	x, y, inside := reactea.Mouse(ctx, msg)
+	if !inside || msg.Button != tea.MouseLeft {
+		return nil
+	}
+	if pageheader.BackAt(x, y) {
+		return pageheader.Back()
+	}
+	if y < pageheader.Height || y >= pageheader.Height+room {
+		return nil
+	}
+	content := d.content(innerWidth)
+	position, ok := content.postAt(d.offset + y - pageheader.Height)
+	if !ok || x < position.left || x >= position.left+position.width {
+		return nil
+	}
+	d.selected = position.index
+	post := d.posts[position.index]
+	cardX := x - position.left
+	cardRow := d.offset + y - pageheader.Height - position.top
+	if user, hit := postcomponent.CardUserAtWithImages(post, cardX, cardRow, position.width, d.images); hit {
+		return navigation.OpenUser(user)
+	}
+	if quoted, hit := postcomponent.CardQuotedPostAtWithImages(post, cardX, cardRow, position.width, d.images); hit {
+		return navigation.OpenPost(quoted)
+	}
+	if cardRow == position.height-2 {
+		return postcomponent.Request(postcomponent.CardActionAt(cardX, position.width), post)
+	}
+
+	return navigation.OpenPost(post)
+}
