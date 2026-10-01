@@ -50,7 +50,7 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 				t.Errorf("edit body = %#v", body)
 			}
 		case "/api/notifications":
-			writeJSON(t, writer, `{"items":[{"id":"notice-1","kind":"LIKE","read":false,"actorCount":1,"actors":[{"id":"user-2","handle":"bob","name":"Bob"}],"tweet":`+webPost+`}],"nextCursor":"notices-next"}`)
+			writeJSON(t, writer, `{"items":[{"id":"notice-1","kind":"LIKE","read":false,"actorCount":1,"groupCount":2,"actors":[{"id":"user-2","handle":"bob","name":"Bob"}],"tweet":`+webPost+`}],"nextCursor":"notices-next"}`)
 		case "/api/notifications/unread-count":
 			writeJSON(t, writer, `{"count":2}`)
 		case "/api/notifications/read":
@@ -127,15 +127,15 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 	if _, err := client.EditPost(ctx, "post-1", "updated", []string{"media-1"}); err != nil {
 		t.Fatalf("EditPost: %v", err)
 	}
-	notifications, _, err := client.Notifications(ctx, "")
-	if err != nil || len(notifications.Items) != 1 || notifications.Items[0].Kind != "LIKE" || notifications.Items[0].Post == nil || notifications.Items[0].Post.ID != "post-1" || notifications.Items[0].Post.Poll == nil || notifications.NextCursor == nil {
+	notifications, _, err := client.Notifications(ctx, north.NotificationsAll, "")
+	if err != nil || len(notifications.Items) != 1 || notifications.Items[0].Kind != "LIKE" || notifications.Items[0].GroupCount != 2 || notifications.Items[0].Post == nil || notifications.Items[0].Post.ID != "post-1" || notifications.Items[0].Post.Poll == nil || notifications.NextCursor == nil {
 		t.Fatalf("Notifications = %#v, %v", notifications, err)
 	}
 	unread, _, err := client.NotificationUnreadCount(ctx)
 	if err != nil || unread != 2 {
 		t.Fatalf("NotificationUnreadCount = %d, %v", unread, err)
 	}
-	if _, err := client.MarkNotificationsRead(ctx); err != nil {
+	if _, _, err := client.MarkNotificationsRead(ctx); err != nil {
 		t.Fatalf("MarkNotificationsRead: %v", err)
 	}
 }

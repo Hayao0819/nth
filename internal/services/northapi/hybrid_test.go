@@ -14,13 +14,34 @@ import (
 
 type officialSpy struct {
 	OfficialAPI
-	meCalls int
+	meCalls           int
+	notificationCalls int
+	unreadCalls       int
+	markReadCalls     int
 }
 
 func (s *officialSpy) Me(context.Context) (north.User, *north.Response, error) {
 	s.meCalls++
 
 	return north.User{ID: "official-user", Handle: "official"}, nil, nil
+}
+
+func (s *officialSpy) Notifications(context.Context, north.NotificationTab, string) (north.NotificationPage, *north.Response, error) {
+	s.notificationCalls++
+
+	return north.NotificationPage{Items: []north.Notification{{ID: "official-notice"}}}, nil, nil
+}
+
+func (s *officialSpy) NotificationUnreadCount(context.Context) (int, *north.Response, error) {
+	s.unreadCalls++
+
+	return 2, nil, nil
+}
+
+func (s *officialSpy) MarkNotificationsRead(context.Context) (int, *north.Response, error) {
+	s.markReadCalls++
+
+	return 2, nil, nil
 }
 
 func TestHybridPrefersOfficialAndKeepsBrowserOnlyFeatures(t *testing.T) {
@@ -50,17 +71,29 @@ func TestHybridPrefersOfficialAndKeepsBrowserOnlyFeatures(t *testing.T) {
 	if official.meCalls != 1 || webRequests.Load() != 0 {
 		t.Fatalf("official calls = %d, web requests = %d", official.meCalls, webRequests.Load())
 	}
-	if _, _, err := client.Notifications(context.Background(), ""); err != nil {
-		t.Fatal(err)
+	page, _, err := client.Notifications(context.Background(), north.NotificationsAll, "")
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "official-notice" {
+		t.Fatalf("Notifications = %#v, %v", page, err)
 	}
-	if webRequests.Load() != 1 {
-		t.Fatalf("notification web requests = %d", webRequests.Load())
+	if official.notificationCalls != 1 || webRequests.Load() != 0 {
+		t.Fatalf("notification calls: official = %d, web = %d", official.notificationCalls, webRequests.Load())
+	}
+	unread, _, err := client.NotificationUnreadCount(context.Background())
+	if err != nil || unread != 2 {
+		t.Fatalf("NotificationUnreadCount = %d, %v", unread, err)
+	}
+	marked, _, err := client.MarkNotificationsRead(context.Background())
+	if err != nil || marked != 2 {
+		t.Fatalf("MarkNotificationsRead = %d, %v", marked, err)
+	}
+	if official.unreadCalls != 1 || official.markReadCalls != 1 || webRequests.Load() != 0 {
+		t.Fatalf("notification state calls: unread = %d, read = %d, web = %d", official.unreadCalls, official.markReadCalls, webRequests.Load())
 	}
 	conversation, _, err := client.PostConversation(context.Background(), "post-1", "")
 	if err != nil || conversation.Post.ID != "post-1" {
 		t.Fatalf("PostConversation = %#v, %v", conversation, err)
 	}
-	if webRequests.Load() != 2 {
+	if webRequests.Load() != 1 {
 		t.Fatalf("browser-only web requests = %d", webRequests.Load())
 	}
 }
@@ -100,7 +133,7 @@ func TestHybridRefreshesAnExpiredBrowserSessionAndRetries(t *testing.T) {
 		request.Complete(request.Refresh(context.Background()))
 	})
 
-	page, _, err := client.Notifications(context.Background(), "")
+	page, _, err := client.Notifications(context.Background(), north.NotificationsAll, "")
 	if err != nil {
 		t.Fatal(err)
 	}

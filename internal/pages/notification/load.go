@@ -61,7 +61,7 @@ func (d *Screen) load(ctx context.Context, more bool) tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		page, response, err := d.api.Notifications(ctx, cursor)
+		page, response, err := d.api.Notifications(ctx, north.NotificationsAll, cursor)
 		return PageLoadedMsg{target: d, page: page, response: response, err: err, more: more}
 	}
 }
@@ -73,7 +73,7 @@ func (d *Screen) markRead(ctx context.Context) tea.Cmd {
 	d.markingRead = true
 
 	return func() tea.Msg {
-		response, err := d.api.MarkNotificationsRead(ctx)
+		_, response, err := d.api.MarkNotificationsRead(ctx)
 		return ReadMsg{target: d, response: response, err: err}
 	}
 }

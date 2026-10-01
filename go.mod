@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/Hayao0819/go-north v0.0.0-20261001114943-0f63f66bf8e5
+	github.com/Hayao0819/go-north v0.0.0-20261001151855-78efed085f7a
 	github.com/Hayao0819/reactea/v2 v2.0.0-20260905132200-095e51090a1f
 	github.com/browserutils/kooky v0.2.10
 	github.com/charmbracelet/x/ansi v0.11.8

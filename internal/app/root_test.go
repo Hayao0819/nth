@@ -759,7 +759,7 @@ func TestNotificationsOpenAndMarkTheFeedRead(t *testing.T) {
 	}
 }
 
-func TestNotificationsAreHiddenWithoutBrowserAuthentication(t *testing.T) {
+func TestNotificationsAreHiddenWithoutNotificationAPI(t *testing.T) {
 	t.Parallel()
 
 	root := newRoot(&fakeAPI{})
@@ -767,7 +767,7 @@ func TestNotificationsAreHiddenWithoutBrowserAuthentication(t *testing.T) {
 	program.Start()
 
 	if plain := testkit.Plain(program); strings.Contains(plain, "Notifications") || strings.Contains(plain, "2 notices") {
-		t.Fatalf("compact UI exposed notifications without browser authentication:\n%s", plain)
+		t.Fatalf("compact UI exposed unavailable notifications:\n%s", plain)
 	}
 	testkit.Click(program, 75, 1)
 	if root.feed.CurrentMode() != feed.Home {
@@ -775,7 +775,7 @@ func TestNotificationsAreHiddenWithoutBrowserAuthentication(t *testing.T) {
 	}
 	testkit.SendKeys(program, "?")
 	if plain := testkit.Plain(program); strings.Contains(plain, "Open notifications") {
-		t.Fatalf("help exposed notifications without browser authentication:\n%s", plain)
+		t.Fatalf("help exposed unavailable notifications:\n%s", plain)
 	}
 	testkit.SendKeys(program, "esc", "2")
 	if root.page.kind != timelinePage || root.notice != "" {
@@ -784,7 +784,7 @@ func TestNotificationsAreHiddenWithoutBrowserAuthentication(t *testing.T) {
 
 	testkit.RenderAt(program, 180, 24)
 	if plain := testkit.Plain(program); strings.Contains(plain, "Notifications") || strings.Contains(plain, "2 notices") {
-		t.Fatalf("wide UI exposed notifications without browser authentication:\n%s", plain)
+		t.Fatalf("wide UI exposed unavailable notifications:\n%s", plain)
 	}
 }
 
@@ -895,7 +895,7 @@ type notificationAppAPI struct {
 	markedRead int
 }
 
-func (a *notificationAppAPI) Notifications(context.Context, string) (notification.Page, *north.Response, error) {
+func (a *notificationAppAPI) Notifications(context.Context, north.NotificationTab, string) (notification.Page, *north.Response, error) {
 	return a.page, a.response(), nil
 }
 
@@ -903,10 +903,10 @@ func (a *notificationAppAPI) NotificationUnreadCount(context.Context) (int, *nor
 	return a.unread, a.response(), nil
 }
 
-func (a *notificationAppAPI) MarkNotificationsRead(context.Context) (*north.Response, error) {
+func (a *notificationAppAPI) MarkNotificationsRead(context.Context) (int, *north.Response, error) {
 	a.markedRead++
 
-	return a.response(), nil
+	return a.markedRead, a.response(), nil
 }
 
 type editCall struct {

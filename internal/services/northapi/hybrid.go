@@ -228,26 +228,34 @@ func (c *Hybrid) EditPost(ctx context.Context, id, text string, mediaIDs []strin
 	return response, err
 }
 
-func (c *Hybrid) Notifications(ctx context.Context, cursor string) (notification.Page, *north.Response, error) {
-	return withWeb(ctx, c, func(client *Client) (notification.Page, *north.Response, error) {
-		return client.Notifications(ctx, cursor)
+func (c *Hybrid) Notifications(ctx context.Context, tab north.NotificationTab, cursor string) (north.NotificationPage, *north.Response, error) {
+	if official, ok := c.official.(notification.API); ok {
+		return official.Notifications(ctx, tab, cursor)
+	}
+
+	return withWeb(ctx, c, func(client *Client) (north.NotificationPage, *north.Response, error) {
+		return client.Notifications(ctx, tab, cursor)
 	})
 }
 
 func (c *Hybrid) NotificationUnreadCount(ctx context.Context) (int, *north.Response, error) {
+	if official, ok := c.official.(notification.API); ok {
+		return official.NotificationUnreadCount(ctx)
+	}
+
 	return withWeb(ctx, c, func(client *Client) (int, *north.Response, error) {
 		return client.NotificationUnreadCount(ctx)
 	})
 }
 
-func (c *Hybrid) MarkNotificationsRead(ctx context.Context) (*north.Response, error) {
-	_, response, err := withWeb(ctx, c, func(client *Client) (struct{}, *north.Response, error) {
-		response, err := client.MarkNotificationsRead(ctx)
+func (c *Hybrid) MarkNotificationsRead(ctx context.Context) (int, *north.Response, error) {
+	if official, ok := c.official.(notification.API); ok {
+		return official.MarkNotificationsRead(ctx)
+	}
 
-		return struct{}{}, response, err
+	return withWeb(ctx, c, func(client *Client) (int, *north.Response, error) {
+		return client.MarkNotificationsRead(ctx)
 	})
-
-	return response, err
 }
 
 func (c *Hybrid) DMConversations(ctx context.Context, cursor string, requests bool) (unofficial.DMConversationPage, *north.Response, error) {

@@ -153,9 +153,12 @@ func TestAPITokenDoesNotReadBrowserCookies(t *testing.T) {
 
 			return false, nil
 		},
-		start: func(_ context.Context, _ app.API, options app.Options) error {
+		start: func(_ context.Context, api app.API, options app.Options) error {
 			started = true
 			images = options.Images
+			if _, ok := api.(notification.API); !ok {
+				t.Fatal("API token client does not expose notifications")
+			}
 
 			return nil
 		},
@@ -192,7 +195,7 @@ func TestAPITokenAndBrowserSessionAreCombined(t *testing.T) {
 		start: func(_ context.Context, api app.API, _ app.Options) error {
 			started = true
 			if _, ok := api.(notification.API); !ok {
-				t.Fatal("combined client does not expose browser-only notifications")
+				t.Fatal("combined client does not expose notifications")
 			}
 
 			return nil

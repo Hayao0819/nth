@@ -2,41 +2,30 @@ package notification
 
 import (
 	"context"
-	"time"
 
 	"github.com/Hayao0819/go-north"
 )
 
-type Kind string
+type Kind = north.NotificationKind
 
 const (
-	Follow  Kind = "FOLLOW"
-	Like    Kind = "LIKE"
-	Repost  Kind = "RETWEET"
-	Post    Kind = "POST"
-	Reply   Kind = "REPLY"
-	Quote   Kind = "QUOTE"
-	Mention Kind = "MENTION"
+	Follow  = north.NotificationFollow
+	Like    = north.NotificationLike
+	Repost  = north.NotificationRepost
+	Post    = north.NotificationPost
+	Reply   = north.NotificationReply
+	Quote   = north.NotificationQuote
+	Mention = north.NotificationMention
 )
 
-type Item struct {
-	ID          string
-	Kind        Kind
-	Read        bool
-	Actors      []north.User
-	ActorCount  int
-	TargetCount int
-	CreatedAt   time.Time
-	Post        *north.Post
-}
+type Item = north.Notification
 
-type Page struct {
-	Items      []Item
-	NextCursor *string
-}
+type Page = north.NotificationPage
 
 type API interface {
-	Notifications(context.Context, string) (Page, *north.Response, error)
+	Notifications(context.Context, north.NotificationTab, string) (north.NotificationPage, *north.Response, error)
 	NotificationUnreadCount(context.Context) (int, *north.Response, error)
-	MarkNotificationsRead(context.Context) (*north.Response, error)
+	MarkNotificationsRead(context.Context) (int, *north.Response, error)
 }
+
+var _ API = (*north.Client)(nil)

@@ -22,7 +22,7 @@ type notificationAPI struct {
 	loadErr  error
 }
 
-func (a *notificationAPI) Notifications(_ context.Context, cursor string) (notificationdomain.Page, *north.Response, error) {
+func (a *notificationAPI) Notifications(_ context.Context, _ north.NotificationTab, cursor string) (notificationdomain.Page, *north.Response, error) {
 	a.calls = append(a.calls, cursor)
 
 	return a.pages[cursor], nil, a.loadErr
@@ -32,10 +32,10 @@ func (a *notificationAPI) NotificationUnreadCount(context.Context) (int, *north.
 	return 0, nil, nil
 }
 
-func (a *notificationAPI) MarkNotificationsRead(context.Context) (*north.Response, error) {
+func (a *notificationAPI) MarkNotificationsRead(context.Context) (int, *north.Response, error) {
 	a.readCall++
 
-	return nil, a.readErr
+	return 0, nil, a.readErr
 }
 
 func TestPageLoadsMarksReadAndPaginates(t *testing.T) {

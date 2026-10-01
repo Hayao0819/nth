@@ -10,7 +10,6 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/domain/conversation"
-	"github.com/Hayao0819/nth/internal/domain/notification"
 )
 
 // Client uses a north.rip web session for all nth operations.
@@ -136,16 +135,17 @@ func (c *Client) UndoRepost(ctx context.Context, id string) (north.RepostState, 
 	return state, publicResponse(response), err
 }
 
-func (c *Client) Notifications(ctx context.Context, cursor string) (notification.Page, *north.Response, error) {
-	page, response, err := c.web.Notifications(ctx, unofficial.NotificationsAll, cursor)
-	items := make([]notification.Item, len(page.Items))
+func (c *Client) Notifications(ctx context.Context, tab north.NotificationTab, cursor string) (north.NotificationPage, *north.Response, error) {
+	page, response, err := c.web.Notifications(ctx, unofficial.NotificationTab(tab), cursor)
+	items := make([]north.Notification, len(page.Items))
 	for index, item := range page.Items {
-		items[index] = notification.Item{
+		items[index] = north.Notification{
 			ID:          item.ID,
-			Kind:        notification.Kind(item.Kind),
+			Kind:        item.Kind,
 			Read:        item.Read,
 			Actors:      item.Actors,
 			ActorCount:  item.ActorCount,
+			GroupCount:  item.GroupCount,
 			TargetCount: item.TargetCount,
 			CreatedAt:   item.CreatedAt,
 		}
@@ -155,7 +155,7 @@ func (c *Client) Notifications(ctx context.Context, cursor string) (notification
 		}
 	}
 
-	return notification.Page{Items: items, NextCursor: page.NextCursor}, publicResponse(response), err
+	return north.NotificationPage{Items: items, NextCursor: page.NextCursor}, publicResponse(response), err
 }
 
 func (c *Client) NotificationUnreadCount(ctx context.Context) (int, *north.Response, error) {
@@ -164,10 +164,10 @@ func (c *Client) NotificationUnreadCount(ctx context.Context) (int, *north.Respo
 	return count, publicResponse(response), err
 }
 
-func (c *Client) MarkNotificationsRead(ctx context.Context) (*north.Response, error) {
+func (c *Client) MarkNotificationsRead(ctx context.Context) (int, *north.Response, error) {
 	response, err := c.web.MarkNotificationsRead(ctx)
 
-	return publicResponse(response), err
+	return 0, publicResponse(response), err
 }
 
 func (c *Client) DMConversations(ctx context.Context, cursor string, requests bool) (unofficial.DMConversationPage, *north.Response, error) {

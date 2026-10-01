@@ -85,7 +85,7 @@ func (w *wizard) methodScreen(compact bool) []string {
 		w.choice(w.method == auth.MethodAPIToken, "API token"),
 	)
 	if !compact {
-		description := "Enables notifications and other browser-only features."
+		description := "Enables messages, bookmarks, and other browser-only features."
 		if w.method == auth.MethodAPIToken {
 			description = "Preferred for every operation supported by the public API."
 		}
