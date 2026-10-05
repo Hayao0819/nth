@@ -217,6 +217,9 @@ func TestWideLayout(t *testing.T) {
 	program.Start()
 
 	plain := testkit.Plain(program)
+	if strings.Contains(plain, "Settings") {
+		t.Fatalf("sidebar still contains Settings:\n%s", plain)
+	}
 	lines := strings.Split(plain, "\n")
 	if strings.Contains(lines[0], "For you") || !strings.Contains(lines[1], "For you") || strings.Contains(lines[2], "For you") {
 		t.Fatalf("timeline tabs do not have one row of vertical padding:\n%s", plain)

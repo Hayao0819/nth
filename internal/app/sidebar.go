@@ -23,7 +23,6 @@ const (
 	navigateBookmarks
 	navigateLists
 	navigateProfile
-	navigateSettings
 )
 
 type navigationMsg struct {
@@ -148,7 +147,6 @@ func (s *sidebar) build(width, height int) sidebarLayout {
 	}
 	addItem(r.page.kind == listsPage, "", "Lists", navigationMsg{action: navigateLists})
 	addItem(r.page.kind == profilePage && r.me != nil && strings.EqualFold(r.page.key, r.me.Handle), "", "Profile", navigationMsg{action: navigateProfile})
-	addItem(r.page.kind == settingsPage, "", "Settings", navigationMsg{action: navigateSettings})
 	first := len(lines)
 	lines = append(lines, "  "+r.theme.Button.Width(min(18, innerWidth)).Align(lipgloss.Center).Render("n  Post"), "")
 	result.hits = append(result.hits, sidebarHit{

@@ -15,7 +15,6 @@ const (
 	bookmarksPage
 	listsPage
 	profilePage
-	settingsPage
 	postPage
 	searchPage
 )

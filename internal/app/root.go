@@ -406,8 +406,6 @@ func (r *root) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 				return r.openUser(ctx, *r.me)
 			}
 			return nil
-		case navigateSettings:
-			return r.openSettings(ctx)
 		default:
 			return r.openTimeline(ctx, msg.mode)
 		}

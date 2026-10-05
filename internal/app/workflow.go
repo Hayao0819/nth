@@ -118,18 +118,6 @@ func (r *root) openLists(ctx *reactea.Ctx) tea.Cmd {
 	})
 }
 
-func (r *root) openSettings(ctx *reactea.Ctx) tea.Cmd {
-	return r.pushPage(ctx, pageState{
-		kind: settingsPage,
-		key:  "settings",
-		component: infopage.New(
-			r.theme,
-			"Settings",
-			"Run nth setup to change authentication, browser, and image settings.",
-		),
-	})
-}
-
 func (r *root) search(ctx *reactea.Ctx) tea.Cmd {
 	current := ""
 	if page, ok := r.page.component.(*searchpage.Screen); ok {
