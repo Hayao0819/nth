@@ -8,7 +8,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
-	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/components/feed"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
 	"github.com/Hayao0819/nth/internal/domain/notification"
@@ -297,7 +296,7 @@ func TestWideLayoutTrendsOpenSearch(t *testing.T) {
 	t.Parallel()
 
 	service := &fakeAPI{}
-	trends := &fakeTrendAPI{items: []unofficial.Trend{
+	trends := &fakeTrendAPI{items: []north.Trend{
 		{Tag: "golang", Count: 42, IsHashtag: true},
 		{Tag: "North", Count: 12},
 	}}
@@ -353,12 +352,12 @@ func TestSidebarPaddingIsClickable(t *testing.T) {
 }
 
 type fakeTrendAPI struct {
-	items []unofficial.Trend
+	items []north.Trend
 	err   error
 }
 
-func (f *fakeTrendAPI) Trends(context.Context) (unofficial.TrendList, *unofficial.Response, error) {
-	return unofficial.TrendList{Items: append([]unofficial.Trend(nil), f.items...)}, nil, f.err
+func (f *fakeTrendAPI) Trends(context.Context, string) ([]north.Trend, *north.Response, error) {
+	return append([]north.Trend(nil), f.items...), nil, f.err
 }
 
 func TestRateLimitStatusExplainsTheNumbers(t *testing.T) {

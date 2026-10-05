@@ -3,9 +3,6 @@ package northapi
 
 import (
 	"context"
-	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
@@ -53,6 +50,12 @@ func (c *Client) Mentions(ctx context.Context, handle, cursor string) (north.Pos
 
 func (c *Client) UserPosts(ctx context.Context, handle, cursor string) (north.PostPage, *north.Response, error) {
 	return publicPostPageResult(c.web.UserPosts(ctx, handle, cursor))
+}
+
+func (c *Client) Trends(ctx context.Context, _ string) ([]north.Trend, *north.Response, error) {
+	list, response, err := c.web.Trends(ctx)
+
+	return publicTrends(list.Items), publicResponse(response), err
 }
 
 func (c *Client) Bookmarks(ctx context.Context, cursor string) (north.PostPage, *north.Response, error) {
@@ -143,7 +146,7 @@ func (c *Client) Notifications(ctx context.Context, tab north.NotificationTab, c
 			ID:          item.ID,
 			Kind:        item.Kind,
 			Read:        item.Read,
-			Actors:      item.Actors,
+			Actors:      publicUsers(item.Actors),
 			ActorCount:  item.ActorCount,
 			GroupCount:  item.GroupCount,
 			TargetCount: item.TargetCount,
@@ -170,67 +173,20 @@ func (c *Client) MarkNotificationsRead(ctx context.Context) (int, *north.Respons
 	return 0, publicResponse(response), err
 }
 
-func (c *Client) DMConversations(ctx context.Context, cursor string, requests bool) (unofficial.DMConversationPage, *north.Response, error) {
+func (c *Client) DMConversations(ctx context.Context, cursor string, requests bool) (north.DMConversationPage, *north.Response, error) {
 	page, response, err := c.web.DMConversations(ctx, cursor, requests)
 
-	return page, publicResponse(response), err
+	return publicDMConversationPage(page), publicResponse(response), err
 }
 
-func (c *Client) DMMessages(ctx context.Context, conversationID, cursor string) (unofficial.DMMessagePage, *north.Response, error) {
+func (c *Client) DMMessages(ctx context.Context, conversationID, cursor string) (north.DMMessagePage, *north.Response, error) {
 	page, response, err := c.web.DMMessages(ctx, conversationID, cursor)
 
-	return page, publicResponse(response), err
+	return publicDMMessagePage(page), publicResponse(response), err
 }
 
 func (c *Client) MarkDMRead(ctx context.Context, conversationID string) (*north.Response, error) {
 	response, err := c.web.MarkDMRead(ctx, conversationID)
 
 	return publicResponse(response), err
-}
-
-func publicPostPage(page unofficial.PostPage) north.PostPage {
-	return page.PublicPostPage()
-}
-
-func publicPostPageResult(page unofficial.PostPage, response *unofficial.Response, err error) (north.PostPage, *north.Response, error) {
-	return publicPostPage(page), publicResponse(response), err
-}
-
-func publicPosts(posts []unofficial.Post) []north.Post {
-	result := make([]north.Post, len(posts))
-	for index := range posts {
-		result[index] = posts[index].PublicPost()
-	}
-
-	return result
-}
-
-func publicResponse(response *unofficial.Response) *north.Response {
-	if response == nil {
-		return nil
-	}
-
-	return &north.Response{
-		StatusCode: response.StatusCode,
-		Header:     response.Header,
-		RateLimit:  rateLimit(response.Header),
-	}
-}
-
-func rateLimit(header http.Header) north.RateLimit {
-	limitValue := header.Get("X-Rate-Limit-Limit")
-	remainingValue := header.Get("X-Rate-Limit-Remaining")
-	resetValue := header.Get("X-Rate-Limit-Reset")
-	if limitValue == "" && remainingValue == "" && resetValue == "" {
-		return north.RateLimit{}
-	}
-	limit, _ := strconv.Atoi(limitValue)
-	remaining, _ := strconv.Atoi(remainingValue)
-	reset, _ := strconv.ParseInt(resetValue, 10, 64)
-	rate := north.RateLimit{Present: true, Limit: limit, Remaining: remaining}
-	if reset > 0 {
-		rate.Reset = time.Unix(reset, 0)
-	}
-
-	return rate
 }

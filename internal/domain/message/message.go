@@ -4,16 +4,15 @@ import (
 	"context"
 
 	"github.com/Hayao0819/go-north"
-	"github.com/Hayao0819/go-north/unofficial"
 )
 
-type Conversation = unofficial.DMConversation
+type Conversation = north.DMConversation
 
-type ConversationPage = unofficial.DMConversationPage
+type ConversationPage = north.DMConversationPage
 
-type Message = unofficial.DMMessage
+type Message = north.DMMessage
 
-type MessagePage = unofficial.DMMessagePage
+type MessagePage = north.DMMessagePage
 
 type API interface {
 	DMConversations(context.Context, string, bool) (ConversationPage, *north.Response, error)

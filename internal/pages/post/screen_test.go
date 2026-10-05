@@ -21,7 +21,7 @@ func TestScreenRendersPostDetails(t *testing.T) {
 
 	replyTo := "bob"
 	alt := "A mountain at sunset"
-	voted := 1
+	voted := "two"
 	created := time.Date(2026, 9, 29, 12, 34, 0, 0, time.Local)
 	post := north.Post{
 		ID:              "post-1",
@@ -38,7 +38,14 @@ func TestScreenRendersPostDetails(t *testing.T) {
 			Kind: north.MediaPhoto, URL: "https://cdn.example/image.jpg", Width: 1200, Height: 800, AltText: &alt,
 		}},
 		Quoted: &north.Post{Text: "quoted text", Author: north.User{Name: "Bob", Handle: "bob"}},
-		Poll:   &north.Poll{Voted: &voted, Options: []north.PollOption{{Label: "One", Votes: 1}, {Label: "Two", Votes: 3}}},
+		Poll: &north.Poll{
+			TotalVotes:     4,
+			ViewerOptionID: &voted,
+			Options: []north.PollOption{
+				{ID: "one", Label: "One", VoteCount: 1, Percent: 25},
+				{ID: "two", Label: "Two", VoteCount: 3, Percent: 75},
+			},
+		},
 	}
 	program := reactea.New(NewPage(nil, ui.NewTheme(), post, false), reactea.WithSize(78, 26))
 	program.Start()

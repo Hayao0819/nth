@@ -97,7 +97,7 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "post-1" || page.NextCursor == nil || page.Items[0].Poll == nil || page.Items[0].Quoted == nil {
 		t.Fatalf("HomeTimeline = %#v, %v", page, err)
 	}
-	if page.Items[0].Poll.Voted == nil || *page.Items[0].Poll.Voted != 1 || page.Items[0].Poll.Options[1].Votes != 2 || len(page.Items[0].Media) != 1 {
+	if page.Items[0].Poll.ViewerOptionID == nil || *page.Items[0].Poll.ViewerOptionID != "option-2" || page.Items[0].Poll.Options[1].VoteCount != 2 || len(page.Items[0].Media) != 1 {
 		t.Fatalf("converted timeline post = %#v", page.Items[0])
 	}
 	post, _, err := client.Post(ctx, "post-1")
@@ -130,6 +130,9 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 	notifications, _, err := client.Notifications(ctx, north.NotificationsAll, "")
 	if err != nil || len(notifications.Items) != 1 || notifications.Items[0].Kind != "LIKE" || notifications.Items[0].GroupCount != 2 || notifications.Items[0].Post == nil || notifications.Items[0].Post.ID != "post-1" || notifications.Items[0].Post.Poll == nil || notifications.NextCursor == nil {
 		t.Fatalf("Notifications = %#v, %v", notifications, err)
+	}
+	if len(notifications.Items[0].Actors) != 1 || notifications.Items[0].Actors[0].Handle != "bob" {
+		t.Fatalf("notification actors = %#v", notifications.Items[0].Actors)
 	}
 	unread, _, err := client.NotificationUnreadCount(ctx)
 	if err != nil || unread != 2 {

@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/Hayao0819/go-north v0.0.0-20261001151855-78efed085f7a
+	github.com/Hayao0819/go-north v0.0.0-20261002090610-ab5ef6c27651
 	github.com/Hayao0819/reactea/v2 v2.0.0-20260905132200-095e51090a1f
 	github.com/browserutils/kooky v0.2.10
 	github.com/charmbracelet/x/ansi v0.11.8
@@ -41,6 +41,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.39.0 // indirect

@@ -343,23 +343,26 @@ func MediaLabel(media north.Media) string {
 }
 
 func RenderPoll(poll *north.Poll, width int, theme ui.Theme) []string {
-	total := 0
-	for _, option := range poll.Options {
-		total += option.Votes
+	total := poll.TotalVotes
+	if total <= 0 {
+		for _, option := range poll.Options {
+			total += option.VoteCount
+		}
 	}
 
 	lines := make([]string, 0, len(poll.Options)+1)
-	for index, option := range poll.Options {
+	for _, option := range poll.Options {
+		selected := poll.ViewerOptionID != nil && *poll.ViewerOptionID == option.ID
 		marker := "○"
-		if poll.Voted != nil && *poll.Voted == index {
+		if selected {
 			marker = "●"
 		}
-		percent := 0
-		if total > 0 {
-			percent = option.Votes * 100 / total
+		percent := option.Percent
+		if percent == 0 && total > 0 && option.VoteCount > 0 {
+			percent = float64(option.VoteCount) * 100 / float64(total)
 		}
-		line := ui.Sides(marker+" "+ui.SafeInline(option.Label), fmt.Sprintf("%d%%", percent), width)
-		if poll.Voted != nil && *poll.Voted == index {
+		line := ui.Sides(marker+" "+ui.SafeInline(option.Label), fmt.Sprintf("%.0f%%", percent), width)
+		if selected {
 			line = theme.Active.Render(line)
 		}
 		lines = append(lines, "  "+line)

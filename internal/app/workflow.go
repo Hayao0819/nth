@@ -46,9 +46,9 @@ func (r *root) loadTrends(ctx context.Context) tea.Cmd {
 	r.trendBusy = true
 
 	return func() tea.Msg {
-		list, _, err := r.trendAPI.Trends(ctx)
+		items, _, err := r.trendAPI.Trends(ctx, "")
 
-		return trendsLoadedMsg{target: r, items: list.Items, err: err}
+		return trendsLoadedMsg{target: r, items: items, err: err}
 	}
 }
 

@@ -30,6 +30,28 @@ type OfficialAPI interface {
 	UndoRepost(context.Context, string) (north.RepostState, *north.Response, error)
 }
 
+type officialBookmarkAPI interface {
+	Bookmarks(context.Context, string) (north.BookmarkPage, *north.Response, error)
+}
+
+type officialConversationAPI interface {
+	Conversation(context.Context, string, string) (north.Conversation, *north.Response, error)
+}
+
+type officialEditorAPI interface {
+	EditPost(context.Context, string, north.EditPostRequest) (north.Post, *north.Response, error)
+}
+
+type officialMessageAPI interface {
+	DMConversations(context.Context, string, bool) (north.DMConversationPage, *north.Response, error)
+	DMMessages(context.Context, string, string) (north.DMMessagePage, *north.Response, error)
+	MarkDMRead(context.Context, string) (bool, *north.Response, error)
+}
+
+type officialTrendAPI interface {
+	Trends(context.Context, string) ([]north.Trend, *north.Response, error)
+}
+
 type RefreshFunc func(context.Context) (*Client, error)
 
 type Hybrid struct {
@@ -123,6 +145,12 @@ func (c *Hybrid) UserPosts(ctx context.Context, handle, cursor string) (north.Po
 }
 
 func (c *Hybrid) Bookmarks(ctx context.Context, cursor string) (north.PostPage, *north.Response, error) {
+	if official, ok := c.official.(officialBookmarkAPI); ok {
+		page, response, err := official.Bookmarks(ctx, cursor)
+
+		return north.PostPage{Items: page.Items, NextCursor: page.NextCursor}, response, err
+	}
+
 	return withWeb(ctx, c, func(client *Client) (north.PostPage, *north.Response, error) {
 		return client.Bookmarks(ctx, cursor)
 	})
@@ -139,6 +167,17 @@ func (c *Hybrid) Post(ctx context.Context, id string) (north.Post, *north.Respon
 }
 
 func (c *Hybrid) PostConversation(ctx context.Context, id, cursor string) (conversation.Page, *north.Response, error) {
+	if official, ok := c.official.(officialConversationAPI); ok {
+		page, response, err := official.Conversation(ctx, id, cursor)
+
+		return conversation.Page{
+			Ancestors:  page.Ancestors,
+			Post:       page.Post,
+			Replies:    page.Replies,
+			NextCursor: page.NextCursor,
+		}, response, err
+	}
+
 	return withWeb(ctx, c, func(client *Client) (conversation.Page, *north.Response, error) {
 		return client.PostConversation(ctx, id, cursor)
 	})
@@ -205,6 +244,12 @@ func (c *Hybrid) UndoRepost(ctx context.Context, id string) (north.RepostState, 
 }
 
 func (c *Hybrid) EditablePost(ctx context.Context, id string) (north.Post, bool, *north.Response, error) {
+	if c.official != nil {
+		post, response, err := c.official.Post(ctx, id)
+
+		return post, post.EditEligible, response, err
+	}
+
 	type result struct {
 		post     north.Post
 		eligible bool
@@ -219,6 +264,17 @@ func (c *Hybrid) EditablePost(ctx context.Context, id string) (north.Post, bool,
 }
 
 func (c *Hybrid) EditPost(ctx context.Context, id, text string, mediaIDs []string) (*north.Response, error) {
+	if official, ok := c.official.(officialEditorAPI); ok {
+		requestText := text
+		requestMediaIDs := append([]string(nil), mediaIDs...)
+		_, response, err := official.EditPost(ctx, id, north.EditPostRequest{
+			Text:     &requestText,
+			MediaIDs: &requestMediaIDs,
+		})
+
+		return response, err
+	}
+
 	_, response, err := withWeb(ctx, c, func(client *Client) (struct{}, *north.Response, error) {
 		response, err := client.EditPost(ctx, id, text, mediaIDs)
 
@@ -258,19 +314,33 @@ func (c *Hybrid) MarkNotificationsRead(ctx context.Context) (int, *north.Respons
 	})
 }
 
-func (c *Hybrid) DMConversations(ctx context.Context, cursor string, requests bool) (unofficial.DMConversationPage, *north.Response, error) {
-	return withWeb(ctx, c, func(client *Client) (unofficial.DMConversationPage, *north.Response, error) {
+func (c *Hybrid) DMConversations(ctx context.Context, cursor string, requests bool) (north.DMConversationPage, *north.Response, error) {
+	if official, ok := c.official.(officialMessageAPI); ok {
+		return official.DMConversations(ctx, cursor, requests)
+	}
+
+	return withWeb(ctx, c, func(client *Client) (north.DMConversationPage, *north.Response, error) {
 		return client.DMConversations(ctx, cursor, requests)
 	})
 }
 
-func (c *Hybrid) DMMessages(ctx context.Context, conversationID, cursor string) (unofficial.DMMessagePage, *north.Response, error) {
-	return withWeb(ctx, c, func(client *Client) (unofficial.DMMessagePage, *north.Response, error) {
+func (c *Hybrid) DMMessages(ctx context.Context, conversationID, cursor string) (north.DMMessagePage, *north.Response, error) {
+	if official, ok := c.official.(officialMessageAPI); ok {
+		return official.DMMessages(ctx, conversationID, cursor)
+	}
+
+	return withWeb(ctx, c, func(client *Client) (north.DMMessagePage, *north.Response, error) {
 		return client.DMMessages(ctx, conversationID, cursor)
 	})
 }
 
 func (c *Hybrid) MarkDMRead(ctx context.Context, conversationID string) (*north.Response, error) {
+	if official, ok := c.official.(officialMessageAPI); ok {
+		_, response, err := official.MarkDMRead(ctx, conversationID)
+
+		return response, err
+	}
+
 	_, response, err := withWeb(ctx, c, func(client *Client) (struct{}, *north.Response, error) {
 		response, err := client.MarkDMRead(ctx, conversationID)
 
@@ -278,6 +348,16 @@ func (c *Hybrid) MarkDMRead(ctx context.Context, conversationID string) (*north.
 	})
 
 	return response, err
+}
+
+func (c *Hybrid) Trends(ctx context.Context, cursor string) ([]north.Trend, *north.Response, error) {
+	if official, ok := c.official.(officialTrendAPI); ok {
+		return official.Trends(ctx, cursor)
+	}
+
+	return withWeb(ctx, c, func(client *Client) ([]north.Trend, *north.Response, error) {
+		return client.Trends(ctx, cursor)
+	})
 }
 
 func withWeb[T any](ctx context.Context, client *Hybrid, call func(*Client) (T, *north.Response, error)) (T, *north.Response, error) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/components/termimage"
 	"github.com/Hayao0819/nth/internal/domain/session"
 	"github.com/Hayao0819/reactea/v2"
@@ -19,11 +18,8 @@ type Options struct {
 
 // Run starts the TUI.
 func Run(ctx context.Context, api API, options Options) error {
-	trends, err := unofficial.NewPublicClient(unofficial.WithUserAgent("nth"))
-	if err != nil {
-		return fmt.Errorf("configure trends: %w", err)
-	}
 	images := termimage.New(options.Images)
+	trends, _ := api.(trendAPI)
 	root := newRootWithServices(api, trends, images)
 	root.notice = options.StartupNotice
 	stack := modal.New(root)

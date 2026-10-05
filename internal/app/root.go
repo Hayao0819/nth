@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
-	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	"github.com/Hayao0819/nth/internal/components/feed"
 	"github.com/Hayao0819/nth/internal/components/navigation"
@@ -67,12 +66,12 @@ type unreadLoadedMsg struct {
 
 type trendsLoadedMsg struct {
 	target *root
-	items  []unofficial.Trend
+	items  []north.Trend
 	err    error
 }
 
 type trendAPI interface {
-	Trends(context.Context) (unofficial.TrendList, *unofficial.Response, error)
+	Trends(context.Context, string) ([]north.Trend, *north.Response, error)
 }
 
 type root struct {
@@ -123,7 +122,7 @@ type root struct {
 	respAt     time.Time
 	unread     int
 	unreadErr  error
-	trends     []unofficial.Trend
+	trends     []north.Trend
 	trendErr   error
 	trendBusy  bool
 	linkedUser map[string]int
@@ -237,7 +236,7 @@ func (r *root) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		r.trendBusy = false
 		r.trendErr = msg.err
 		if msg.err == nil {
-			r.trends = append([]unofficial.Trend(nil), msg.items...)
+			r.trends = append([]north.Trend(nil), msg.items...)
 		}
 
 		return nil
