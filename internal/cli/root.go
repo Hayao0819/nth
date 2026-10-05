@@ -14,18 +14,21 @@ import (
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"github.com/Hayao0819/nth/internal/services/northapi"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 )
 
 type credentialService interface {
 	Load() (auth.Settings, error)
 	Profiles(context.Context) []auth.Profile
 	Save(auth.Settings) error
+	StartOAuth(context.Context) (auth.OAuthSession, error)
+	SaveOAuthToken(string, *oauth2.Token) error
 	RefreshCookie(context.Context, auth.Profile) auth.CookieStatus
 }
 
 type dependencies struct {
 	credentials credentialService
-	setup       func(context.Context, auth.Settings, []auth.Profile, func(auth.Settings) error) (bool, error)
+	setup       func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error)
 	start       func(context.Context, app.API, app.Options) error
 }
 
@@ -91,8 +94,23 @@ func run(command *cobra.Command, version string, deps dependencies) error {
 		web      *northapi.Client
 		notice   string
 	)
-	if settings.HasAPIToken() {
+	if settings.HasAPIToken() && !settings.PreferOAuth() {
 		official, err = north.NewClient(settings.Token, north.WithUserAgent("nth/"+version))
+		if err != nil {
+			return err
+		}
+	} else if settings.HasOAuth() {
+		config := auth.OAuthConfig(settings.OAuth.ClientID)
+		token := settings.OAuth.Token
+		official, err = north.NewClientWithOAuth(
+			command.Context(),
+			config,
+			&token,
+			func(token *oauth2.Token) error {
+				return deps.credentials.SaveOAuthToken(settings.OAuth.ClientID, token)
+			},
+			north.WithUserAgent("nth/"+version),
+		)
 		if err != nil {
 			return err
 		}
@@ -156,7 +174,13 @@ func configure(ctx context.Context, deps dependencies, force bool) (auth.Setting
 		return settings, true, nil
 	}
 
-	complete, err := deps.setup(ctx, settings, deps.credentials.Profiles(ctx), deps.credentials.Save)
+	complete, err := deps.setup(
+		ctx,
+		settings,
+		deps.credentials.Profiles(ctx),
+		deps.credentials.StartOAuth,
+		deps.credentials.Save,
+	)
 	if err != nil || !complete {
 		return settings, false, err
 	}

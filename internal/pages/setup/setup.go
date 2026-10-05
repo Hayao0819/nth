@@ -23,20 +23,34 @@ const (
 type wizard struct {
 	reactea.BasicComponent
 
-	theme      ui.Theme
-	method     auth.Method
-	token      textinput.Model
-	profiles   []auth.Profile
-	selected   int
-	hasBrowser bool
-	images     bool
-	step       int
-	problem    string
-	complete   bool
-	save       func(auth.Settings) error
+	theme       ui.Theme
+	method      auth.Method
+	savedMethod auth.Method
+	token       textinput.Model
+	oauth       auth.OAuthCredential
+	prompt      auth.OAuthPrompt
+	profiles    []auth.Profile
+	selected    int
+	hasBrowser  bool
+	envToken    bool
+	images      bool
+	step        int
+	problem     string
+	complete    bool
+	oauthBusy   bool
+	attempt     uint64
+	oauthCtx    context.Context
+	cancel      context.CancelFunc
+	startOAuth  auth.OAuthStartFunc
+	save        func(auth.Settings) error
 }
 
-func newWizard(initial auth.Settings, profiles []auth.Profile, save func(auth.Settings) error) *wizard {
+func newWizard(
+	initial auth.Settings,
+	profiles []auth.Profile,
+	startOAuth auth.OAuthStartFunc,
+	save func(auth.Settings) error,
+) *wizard {
 	input := textinput.New()
 	input.Prompt = ""
 	input.Placeholder = "Paste your north API token"
@@ -45,11 +59,25 @@ func newWizard(initial auth.Settings, profiles []auth.Profile, save func(auth.Se
 	styles := input.Styles()
 	styles.Cursor.Blink = false
 	input.SetStyles(styles)
-	input.SetValue(initial.Token)
+	if !initial.HasEnvironmentToken() {
+		input.SetValue(initial.Token)
+	}
 
 	method := initial.Method
-	if !method.Valid() {
-		method = auth.MethodBrowser
+	if initial.HasEnvironmentToken() {
+		method = auth.MethodAPIToken
+	} else if method == auth.MethodBrowser || !method.Valid() {
+		switch {
+		case initial.HasOAuth():
+			method = auth.MethodOAuth
+		case initial.HasAPIToken():
+			method = auth.MethodAPIToken
+		default:
+			method = auth.MethodOAuth
+		}
+	}
+	if method != auth.MethodOAuth && method != auth.MethodAPIToken {
+		method = auth.MethodOAuth
 	}
 	profiles = append([]auth.Profile(nil), profiles...)
 	selected := selectedProfile(profiles, initial.Browser)
@@ -62,14 +90,18 @@ func newWizard(initial auth.Settings, profiles []auth.Profile, save func(auth.Se
 	}
 
 	return &wizard{
-		theme:      ui.NewTheme(),
-		method:     method,
-		token:      input,
-		profiles:   profiles,
-		selected:   selected,
-		hasBrowser: initial.Browser.Valid(),
-		images:     initial.Images,
-		save:       save,
+		theme:       ui.NewTheme(),
+		method:      method,
+		savedMethod: initial.Method,
+		token:       input,
+		oauth:       initial.OAuth,
+		profiles:    profiles,
+		selected:    selected,
+		hasBrowser:  initial.Browser.Valid(),
+		envToken:    initial.HasEnvironmentToken(),
+		images:      initial.Images,
+		startOAuth:  startOAuth,
+		save:        save,
 	}
 }
 
@@ -97,18 +129,44 @@ func (w *wizard) Init(*reactea.Ctx) tea.Cmd {
 
 func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	if reactea.Key(msg, "ctrl+c") {
+		w.cancelOAuth()
+
 		return tea.Quit
 	}
-	if wheel, ok := msg.(tea.MouseWheelMsg); ok && w.step == stepCredential && w.method == auth.MethodBrowser {
-		if _, _, inside := reactea.Mouse(ctx, msg); inside {
-			if wheel.Button == tea.MouseWheelUp {
-				w.moveProfile(-1)
-			} else if wheel.Button == tea.MouseWheelDown {
-				w.moveProfile(1)
-			}
+	switch msg := msg.(type) {
+	case oauthStartedMsg:
+		if msg.attempt != w.attempt {
+			return nil
+		}
+		if msg.err != nil {
+			w.stopOAuth()
+			w.problem = msg.err.Error()
 
 			return nil
 		}
+		if msg.session == nil {
+			w.stopOAuth()
+			w.problem = "North sign-in did not return a session"
+
+			return nil
+		}
+		w.prompt = msg.session.Prompt()
+
+		return w.waitOAuth(msg.attempt, msg.session)
+	case oauthCompletedMsg:
+		if msg.attempt != w.attempt {
+			return nil
+		}
+		w.stopOAuth()
+		if msg.err != nil {
+			w.problem = msg.err.Error()
+
+			return nil
+		}
+		w.oauth = msg.credential
+		w.step = stepReview
+
+		return nil
 	}
 	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
 		if command, handled := w.handleClick(ctx, msg); handled {
@@ -120,17 +178,29 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	switch w.step {
 	case stepMethod:
 		switch {
-		case reactea.Key(msg, "up", "k", "left", "h", "down", "j", "right", "l", "space"):
-			w.toggleMethod()
+		case reactea.Key(msg, "up", "k", "left", "h"):
+			w.moveMethod(-1)
+		case reactea.Key(msg, "down", "j", "right", "l", "space"):
+			w.moveMethod(1)
 		case reactea.Key(msg, "enter"):
-			w.step = stepCredential
-			if w.method == auth.MethodAPIToken {
+			switch w.method {
+			case auth.MethodAPIToken:
+				if w.envToken {
+					w.step = stepReview
+
+					return nil
+				}
+				w.step = stepCredential
 				return w.token.Focus()
+			case auth.MethodOAuth:
+				w.step = stepCredential
+				return w.beginOAuth(ctx.Context())
 			}
 		}
 
 	case stepCredential:
-		if w.method == auth.MethodAPIToken {
+		switch w.method {
+		case auth.MethodAPIToken:
 			switch {
 			case reactea.Key(msg, "esc"):
 				w.token.Blur()
@@ -150,29 +220,30 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 			w.token, command = w.token.Update(msg)
 
 			return command
-		}
+		case auth.MethodOAuth:
+			switch {
+			case reactea.Key(msg, "esc"):
+				w.cancelOAuth()
+				w.step = stepMethod
+			case reactea.Key(msg, "enter") && !w.oauthBusy:
+				if w.oauth.Valid() {
+					w.step = stepReview
 
-		switch {
-		case reactea.Key(msg, "esc"):
-			w.step = stepMethod
-		case reactea.Key(msg, "up", "k", "left", "h"):
-			w.moveProfile(-1)
-		case reactea.Key(msg, "down", "j", "right", "l", "space"):
-			w.moveProfile(1)
-		case reactea.Key(msg, "enter"):
-			if len(w.profiles) == 0 {
-				w.problem = "No supported browser profile was found"
+					return nil
+				}
 
-				return nil
+				return w.beginOAuth(ctx.Context())
 			}
-			w.hasBrowser = true
-			w.step = stepReview
 		}
 
 	case stepReview:
 		switch {
 		case reactea.Key(msg, "esc"):
-			w.step = stepCredential
+			if w.method == auth.MethodOAuth || w.envToken {
+				w.step = stepMethod
+			} else {
+				w.step = stepCredential
+			}
 			if w.method == auth.MethodAPIToken {
 				return w.token.Focus()
 			}
@@ -182,7 +253,12 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 
 				return nil
 			}
-			settings := auth.Settings{Method: w.method, Token: w.token.Value(), Images: w.images}
+			settings := auth.Settings{
+				Method: w.method,
+				Token:  w.token.Value(),
+				OAuth:  w.oauth,
+				Images: w.images,
+			}
 			if len(w.profiles) > 0 && (w.method == auth.MethodBrowser || w.hasBrowser) {
 				settings.Browser = w.profiles[w.selected]
 			}
@@ -201,6 +277,8 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 			return tea.Quit
 		case reactea.Key(msg, "i"):
 			w.images = !w.images
+		case reactea.Key(msg, "b"):
+			w.cycleBrowser()
 		}
 	}
 
@@ -221,8 +299,8 @@ func (w *wizard) handleClick(ctx *reactea.Ctx, msg tea.Msg) (tea.Cmd, bool) {
 
 	switch w.step {
 	case stepMethod:
-		if ui.TextAt(line, x, "Browser session") {
-			w.method = auth.MethodBrowser
+		if ui.TextAt(line, x, "Sign in with north") {
+			w.method = auth.MethodOAuth
 
 			return nil, true
 		}
@@ -232,18 +310,15 @@ func (w *wizard) handleClick(ctx *reactea.Ctx, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 	case stepCredential:
-		if w.method == auth.MethodBrowser {
-			for index, profile := range w.profiles {
-				if ui.TextAt(line, x, ui.SafeInline(profile.Label())) {
-					w.selected = index
-
-					return nil, true
-				}
-			}
-		} else if strings.Contains(line, "› ") {
+		if w.method == auth.MethodAPIToken && strings.Contains(line, "› ") {
 			return w.token.Focus(), true
 		}
 	case stepReview:
+		if ui.TextAt(line, x, "Browser features") {
+			w.cycleBrowser()
+
+			return nil, true
+		}
 		if ui.TextAt(line, x, "Terminal images") {
 			w.images = !w.images
 
@@ -264,12 +339,28 @@ func (w *wizard) handleClick(ctx *reactea.Ctx, msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (w *wizard) toggleMethod() {
-	if w.method == auth.MethodBrowser {
-		w.method = auth.MethodAPIToken
-	} else {
-		w.method = auth.MethodBrowser
+func (w *wizard) moveMethod(by int) {
+	methods := [...]auth.Method{auth.MethodOAuth, auth.MethodAPIToken}
+	index := 0
+	for candidate, method := range methods {
+		if method == w.method {
+			index = candidate
+			break
+		}
 	}
+	w.method = methods[(index+by+len(methods))%len(methods)]
+}
+
+func (w *wizard) cycleBrowser() {
+	if len(w.profiles) == 0 {
+		return
+	}
+	if !w.hasBrowser {
+		w.hasBrowser = true
+
+		return
+	}
+	w.moveProfile(1)
 }
 
 func (w *wizard) moveProfile(by int) {
@@ -284,9 +375,11 @@ func Run(
 	ctx context.Context,
 	initial auth.Settings,
 	profiles []auth.Profile,
+	startOAuth auth.OAuthStartFunc,
 	save func(auth.Settings) error,
 ) (bool, error) {
-	wizard := newWizard(initial, profiles, save)
+	wizard := newWizard(initial, profiles, startOAuth, save)
+	defer wizard.cancelOAuth()
 	program := reactea.New(
 		wizard,
 		reactea.WithAltScreen(),

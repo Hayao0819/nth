@@ -15,12 +15,12 @@ func (w *wizard) Render(ctx *reactea.Ctx) string {
 	if width <= 0 || height <= 0 {
 		return ""
 	}
-	if width < 38 || height < 10 {
+	if width < 42 || height < 14 {
 		message := strings.Join([]string{
 			"nth setup",
 			"",
 			fmt.Sprintf("terminal is %d×%d", width, height),
-			"resize to at least 38×10",
+			"resize to at least 42×14",
 			"",
 			"ctrl+c exit",
 		}, "\n")
@@ -28,186 +28,302 @@ func (w *wizard) Render(ctx *reactea.Ctx) string {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, message)
 	}
 
-	inner := min(width-4, 72)
-	compact := height < 16
-	w.token.SetWidth(max(1, inner-2))
+	panelStyle := w.theme.Box.Padding(1, 2)
+	panelWidth := min(width-4, 74)
+	panelHeight := min(height-2, 23)
+	contentWidth := panelWidth - panelStyle.GetHorizontalFrameSize()
+	contentHeight := panelHeight - panelStyle.GetVerticalFrameSize()
+	compact := contentWidth < 58 || contentHeight < 17
+	w.token.SetWidth(max(1, contentWidth-2))
+
+	body := w.screen(compact, contentWidth)
+	if w.problem != "" {
+		body = append(body, "", w.theme.Bad.Render("! "+ui.SafeInline(w.problem)))
+	}
+	bodyRoom := max(1, contentHeight-4)
+	if len(body) > bodyRoom {
+		body = body[:bodyRoom]
+	}
+	for len(body) < bodyRoom {
+		body = append(body, "")
+	}
+
 	header := ui.Sides(
 		w.theme.Brand.Render("nth setup"),
 		w.theme.Dim.Render(fmt.Sprintf("%d / %d", w.step+1, stepReview+1)),
-		inner,
+		contentWidth,
 	)
-	lines := []string{header}
-	if !compact {
-		lines = append(lines, "")
-	}
-
-	switch w.step {
-	case stepMethod:
-		lines = append(lines, w.methodScreen(compact)...)
-	case stepCredential:
-		if w.method == auth.MethodBrowser {
-			lines = append(lines, w.browserScreen(compact, height-len(lines)-4)...)
-		} else {
-			lines = append(lines, w.tokenScreen(compact)...)
-		}
-	case stepReview:
-		lines = append(lines, w.review(compact)...)
-	}
-
-	if w.problem != "" {
-		if !compact {
-			lines = append(lines, "")
-		}
-		lines = append(lines, w.theme.Bad.Render("! "+ui.SafeInline(w.problem)))
-	}
-	if !compact {
-		lines = append(lines, "")
-	}
-	lines = append(lines, w.theme.Dim.Render(w.footer(inner)))
-
+	lines := []string{header, w.progress(contentWidth), ""}
+	lines = append(lines, body...)
+	lines = append(lines, w.theme.Dim.Render(w.footer(contentWidth)))
 	for index, line := range lines {
-		lines[index] = ui.Clip(line, inner)
-	}
-	if len(lines) > height {
-		lines = append(lines[:height-1], lines[len(lines)-1])
+		lines[index] = ui.Clip(line, contentWidth)
 	}
 
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
+	panel := panelStyle.
+		Width(panelWidth).
+		Height(panelHeight).
+		Render(strings.Join(lines, "\n"))
+
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel)
 }
 
-func (w *wizard) methodScreen(compact bool) []string {
-	lines := []string{w.theme.Heading.Render("Authentication")}
-	if !compact {
-		lines = append(lines, w.theme.Dim.Render("Choose a credential to add or update."), "")
-	}
-	lines = append(lines,
-		w.choice(w.method == auth.MethodBrowser, "Browser session"),
-		w.choice(w.method == auth.MethodAPIToken, "API token"),
-	)
-	if !compact {
-		description := "Enables messages, bookmarks, and other browser-only features."
-		if w.method == auth.MethodAPIToken {
-			description = "Preferred for every operation supported by the public API."
+func (w *wizard) screen(compact bool, width int) []string {
+	switch w.step {
+	case stepMethod:
+		return w.methodScreen(compact, width)
+	case stepCredential:
+		if w.method == auth.MethodOAuth {
+			return w.oauthScreen(compact, width)
 		}
-		lines = append(lines, "", w.theme.Dim.Render(description))
+
+		return w.tokenScreen(compact)
+	case stepReview:
+		return w.review(compact, width)
+	default:
+		return nil
+	}
+}
+
+func (w *wizard) progress(width int) string {
+	labels := []string{"1  Account", "2  Verify", "3  Finish"}
+	for index, label := range labels {
+		name := strings.TrimPrefix(label, fmt.Sprintf("%d  ", index+1))
+		switch {
+		case index < w.step:
+			labels[index] = w.theme.Active.Render("✓  " + name)
+		case index == w.step:
+			labels[index] = w.theme.Heading.Render("●  " + name)
+		default:
+			labels[index] = w.theme.Dim.Render("○  " + name)
+		}
+	}
+
+	return ui.Columns(labels, width)
+}
+
+func (w *wizard) methodScreen(compact bool, width int) []string {
+	lines := []string{
+		w.theme.Heading.Render("Authentication"),
+		w.currentAuthentication(),
+		"",
+	}
+	if !compact {
+		lines = append(lines, w.theme.Dim.Render("Choose the credential used for public API requests."), "")
+	}
+	lines = append(lines, w.authChoice(
+		w.method == auth.MethodOAuth,
+		auth.MethodOAuth,
+		"Sign in with north",
+		"Browser code · refreshes automatically",
+		compact,
+		width,
+	)...)
+	lines = append(lines, "")
+	lines = append(lines, w.authChoice(
+		w.method == auth.MethodAPIToken,
+		auth.MethodAPIToken,
+		"API token",
+		"Paste a token · advanced",
+		compact,
+		width,
+	)...)
+	if !compact {
+		lines = append(lines, "", w.theme.Dim.Render("Browser features are optional and configured after sign-in."))
 	}
 
 	return lines
 }
 
-func (w *wizard) choice(active bool, label string) string {
-	marker := w.theme.Dim.Render("  ○ ")
-	style := w.theme.Heading
-	if active {
-		marker = w.theme.Active.Render("  ● ")
-		style = w.theme.Active
+func (w *wizard) currentAuthentication() string {
+	label := "Not configured"
+	switch {
+	case w.envToken:
+		label = "API token · NORTH_API_KEY"
+	case w.savedMethod == auth.MethodOAuth && w.oauth.Valid():
+		label = "OAuth · north account"
+	case w.savedMethod == auth.MethodAPIToken && strings.TrimSpace(w.token.Value()) != "":
+		label = "API token · keyring"
+	case w.savedMethod == auth.MethodBrowser && w.hasBrowser:
+		label = "Browser session · legacy"
 	}
 
-	return marker + style.Render(label)
+	return w.theme.Dim.Render("CURRENT  ") + w.theme.Active.Render(label)
 }
 
-func (w *wizard) browserScreen(compact bool, room int) []string {
-	lines := []string{w.theme.Heading.Render("Browser profile")}
+func (w *wizard) authChoice(
+	selected bool,
+	method auth.Method,
+	title string,
+	detail string,
+	compact bool,
+	width int,
+) []string {
+	marker := "  "
+	style := w.theme.Heading
+	if selected {
+		marker = w.theme.Active.Render("▌ ")
+		style = w.theme.Active
+	}
+	badge := ""
+	if w.currentMethod() == method {
+		badge = w.theme.Dim.Render("CURRENT")
+	}
+	lines := []string{ui.Sides(marker+style.Render(title), badge, width)}
 	if !compact {
-		lines = append(lines,
-			w.theme.Dim.Render("Choose the profile that is signed in to north.rip."),
-			w.theme.Dim.Render("nth reads its cookies again whenever it starts."),
-			"",
-		)
+		lines = append(lines, "  "+w.theme.Dim.Render(detail))
 	}
 
-	return append(lines, w.browserChoices(max(1, room-len(lines)))...)
+	return lines
+}
+
+func (w *wizard) currentMethod() auth.Method {
+	if w.envToken {
+		return auth.MethodAPIToken
+	}
+
+	return w.savedMethod
 }
 
 func (w *wizard) tokenScreen(compact bool) []string {
-	lines := []string{w.theme.Heading.Render("North API token")}
+	lines := []string{
+		w.theme.Heading.Render("API token"),
+		w.theme.Dim.Render("Stored in the system keyring."),
+		"",
+	}
 	if !compact {
-		lines = append(lines,
-			w.theme.Dim.Render("Create a read/write token in north Settings › Developer."),
-			w.theme.Dim.Render("The token will be stored in your system keyring."),
-			"",
-		)
+		lines = append(lines, w.theme.Dim.Render("Create a read/write token in north Settings › Developer."), "")
 	}
 
 	return append(lines, w.theme.Accent.Render("› ")+w.token.View())
+}
+
+func (w *wizard) oauthScreen(compact bool, width int) []string {
+	lines := []string{w.theme.Heading.Render("Link your north account")}
+	if w.prompt.VerificationURI == "" {
+		if w.oauthBusy {
+			return append(lines, "", w.theme.Dim.Render("Requesting a browser code…"))
+		}
+
+		return append(lines, "", w.theme.Dim.Render("Press enter to try again."))
+	}
+
+	address := w.prompt.VerificationURIComplete
+	if address == "" {
+		address = w.prompt.VerificationURI
+	}
+	lines = append(lines,
+		w.theme.Dim.Render("1  Open this address"),
+		"   "+w.theme.Accent.Render(ui.Clip(ui.SafeInline(address), max(1, width-3))),
+		"",
+		w.theme.Dim.Render("2  Enter this code"),
+		lipgloss.PlaceHorizontal(width, lipgloss.Center, w.theme.Brand.Render(ui.SafeInline(w.prompt.UserCode))),
+	)
+	if !compact {
+		lines = append(lines,
+			"",
+			w.theme.Dim.Render("Waiting for north to confirm this device…"),
+			w.theme.Dim.Render("nth never receives your password."),
+		)
+	}
+
+	return lines
+}
+
+func (w *wizard) review(compact bool, width int) []string {
+	title, detail := w.selectedAuthentication()
+	lines := []string{
+		w.theme.Heading.Render("Ready to start"),
+		w.theme.Dim.Render("ACTIVE AUTHENTICATION"),
+		w.theme.Active.Render("▌ " + title),
+		"  " + w.theme.Dim.Render(detail),
+		"",
+		w.theme.Dim.Render("OPTIONAL FEATURES"),
+		w.settingLine("Browser features", w.browserState(), w.browserKey(), width),
+		w.settingLine("Terminal images", imageState(w.images), "i toggle", width),
+	}
+	if !compact {
+		lines = append(lines,
+			"",
+			w.theme.Dim.Render("Browser cookies are only used when the public API cannot provide a feature."),
+		)
+	}
+
+	return lines
+}
+
+func (w *wizard) selectedAuthentication() (string, string) {
+	if w.envToken {
+		return "API token", "NORTH_API_KEY · always preferred"
+	}
+	if w.method == auth.MethodOAuth {
+		return "OAuth", "Device authorization · refreshable"
+	}
+
+	return "API token", "System keyring"
+}
+
+func (w *wizard) browserState() string {
+	if w.hasBrowser && len(w.profiles) > 0 {
+		return ui.SafeInline(w.profiles[w.selected].Label())
+	}
+	if len(w.profiles) == 0 {
+		return "Unavailable"
+	}
+
+	return "Not configured"
+}
+
+func (w *wizard) browserKey() string {
+	if len(w.profiles) == 0 {
+		return ""
+	}
+
+	return "b change"
+}
+
+func imageState(enabled bool) string {
+	if enabled {
+		return "Enabled"
+	}
+
+	return "Disabled"
+}
+
+func (w *wizard) settingLine(label, value, key string, width int) string {
+	right := value
+	if key != "" {
+		right += "  " + key
+	}
+
+	return ui.Sides(w.theme.Heading.Render(label), w.theme.Dim.Render(right), width)
 }
 
 func (w *wizard) footer(width int) string {
 	footer := "↑/↓ choose   enter continue   ctrl+c exit"
 	switch w.step {
 	case stepCredential:
-		if w.method == auth.MethodAPIToken {
-			footer = "enter continue   esc back   ctrl+c exit"
+		if w.method == auth.MethodOAuth {
+			footer = "esc cancel   ctrl+c exit"
+			if !w.oauthBusy {
+				footer = "enter retry   esc back   ctrl+c exit"
+			}
 		} else {
-			footer = "↑/↓ choose   enter continue   esc back   ctrl+c exit"
+			footer = "enter continue   esc back   ctrl+c exit"
 		}
 	case stepReview:
-		footer = "i toggle images   enter save and start   esc back   ctrl+c exit"
+		footer = "b browser   i images   enter save and start   esc back"
 	}
 	if width < 58 {
 		switch w.step {
 		case stepReview:
-			return "i images   enter save   esc back"
+			footer = "b browser   i images   enter save"
 		case stepCredential:
-			return "enter continue   esc back   ctrl+c exit"
+			footer = "enter continue   esc back"
 		default:
-			return "↑/↓ choose   enter continue"
+			footer = "↑/↓ choose   enter continue"
 		}
 	}
 
-	return footer
-}
-
-func (w *wizard) browserChoices(room int) []string {
-	if len(w.profiles) == 0 {
-		return []string{w.theme.Bad.Render("No supported browser profile was found")}
-	}
-
-	room = min(room, len(w.profiles))
-	start := min(max(0, w.selected-room/2), len(w.profiles)-room)
-	lines := make([]string, 0, room)
-	for index := start; index < start+room; index++ {
-		profile := w.profiles[index]
-		lines = append(lines, w.choice(index == w.selected, ui.SafeInline(profile.Label())))
-	}
-
-	return lines
-}
-
-func (w *wizard) review(compact bool) []string {
-	value := func(label, value string) string {
-		return w.theme.Dim.Render(fmt.Sprintf("%-15s", label)) + w.theme.Heading.Render(ui.SafeInline(value))
-	}
-	lines := []string{w.theme.Heading.Render("Ready to start")}
-	if strings.TrimSpace(w.token.Value()) != "" {
-		lines = append(lines, value("API token", "Configured · preferred"))
-	}
-	if w.method == auth.MethodBrowser || w.hasBrowser {
-		profile := "No browser selected"
-		if len(w.profiles) > 0 {
-			profile = w.profiles[w.selected].Label()
-		}
-		lines = append(lines, value("Browser", profile))
-	}
-	imageState := "Disabled"
-	if w.images {
-		imageState = "Enabled · automatic"
-	}
-	lines = append(lines, value("Terminal images", imageState))
-	if compact {
-		return lines
-	}
-	if w.method == auth.MethodBrowser || w.hasBrowser {
-		return append(lines,
-			"",
-			w.theme.Dim.Render("Browser cookies are refreshed at startup and cached in the keyring."),
-			w.theme.Dim.Render("Public API operations still prefer the API token when one is configured."),
-			w.theme.Dim.Render("Press i to toggle terminal image previews."),
-		)
-	}
-
-	return append(lines, "",
-		w.theme.Dim.Render("Press i to toggle terminal image previews."),
-		w.theme.Dim.Render("Run nth setup again to add a browser session or replace the token."),
-	)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, footer)
 }

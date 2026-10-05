@@ -10,6 +10,7 @@ import (
 	"github.com/Hayao0819/nth/internal/app"
 	"github.com/Hayao0819/nth/internal/domain/notification"
 	"github.com/Hayao0819/nth/internal/services/auth"
+	"golang.org/x/oauth2"
 )
 
 func TestVersion(t *testing.T) {
@@ -38,7 +39,7 @@ func TestFirstRunSavesSetupBeforeStarting(t *testing.T) {
 	started := false
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(_ context.Context, initial auth.Settings, profiles []auth.Profile, save func(auth.Settings) error) (bool, error) {
+		setup: func(_ context.Context, initial auth.Settings, profiles []auth.Profile, _ auth.OAuthStartFunc, save func(auth.Settings) error) (bool, error) {
 			setupCalled = true
 			if initial.Complete() || len(profiles) != 1 {
 				t.Fatalf("setup initial = %#v, profiles = %#v", initial, profiles)
@@ -80,7 +81,7 @@ func TestSavedCookieFallbackIsReported(t *testing.T) {
 	var notice string
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(context.Context, auth.Settings, []auth.Profile, func(auth.Settings) error) (bool, error) {
+		setup: func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error) {
 			setupCalled = true
 
 			return false, nil
@@ -115,7 +116,7 @@ func TestSetupCommandDoesNotStartTheClient(t *testing.T) {
 	started := false
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(_ context.Context, _ auth.Settings, _ []auth.Profile, save func(auth.Settings) error) (bool, error) {
+		setup: func(_ context.Context, _ auth.Settings, _ []auth.Profile, _ auth.OAuthStartFunc, save func(auth.Settings) error) (bool, error) {
 			selected := auth.Settings{Method: auth.MethodBrowser, Browser: auth.Profile{Browser: "firefox"}}
 
 			return true, save(selected)
@@ -148,7 +149,7 @@ func TestAPITokenDoesNotReadBrowserCookies(t *testing.T) {
 	images := false
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(context.Context, auth.Settings, []auth.Profile, func(auth.Settings) error) (bool, error) {
+		setup: func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error) {
 			t.Fatal("setup ran despite complete token settings")
 
 			return false, nil
@@ -173,6 +174,44 @@ func TestAPITokenDoesNotReadBrowserCookies(t *testing.T) {
 	}
 }
 
+func TestOAuthStartsTheOfficialClient(t *testing.T) {
+	t.Parallel()
+
+	credentials := &fakeCredentials{settings: auth.Settings{
+		Method: auth.MethodOAuth,
+		Token:  "unsafe\napi-token",
+		OAuth: auth.OAuthCredential{
+			ClientID: "client-id",
+			Token:    oauth2.Token{AccessToken: "access-token", RefreshToken: "refresh-token"},
+		},
+	}}
+	started := false
+	deps := dependencies{
+		credentials: credentials,
+		setup: func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error) {
+			t.Fatal("setup ran despite complete OAuth settings")
+
+			return false, nil
+		},
+		start: func(_ context.Context, api app.API, _ app.Options) error {
+			started = true
+			if _, ok := api.(notification.API); !ok {
+				t.Fatal("OAuth client does not expose notifications")
+			}
+
+			return nil
+		},
+	}
+	command := newCommandWith("test", deps)
+	command.SetArgs(nil)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !started || credentials.refreshes != 0 {
+		t.Fatalf("started = %v, browser refreshes = %d", started, credentials.refreshes)
+	}
+}
+
 func TestAPITokenAndBrowserSessionAreCombined(t *testing.T) {
 	t.Parallel()
 
@@ -187,7 +226,7 @@ func TestAPITokenAndBrowserSessionAreCombined(t *testing.T) {
 	started := false
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(context.Context, auth.Settings, []auth.Profile, func(auth.Settings) error) (bool, error) {
+		setup: func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error) {
 			t.Fatal("setup ran despite complete settings")
 
 			return false, nil
@@ -220,7 +259,7 @@ func TestMissingBrowserSessionStartsRefreshableClient(t *testing.T) {
 	}
 	deps := dependencies{
 		credentials: credentials,
-		setup: func(context.Context, auth.Settings, []auth.Profile, func(auth.Settings) error) (bool, error) {
+		setup: func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error) {
 			t.Fatal("setup ran despite a saved browser")
 
 			return false, nil
@@ -260,6 +299,19 @@ func (f *fakeCredentials) Profiles(context.Context) []auth.Profile {
 
 func (f *fakeCredentials) Save(settings auth.Settings) error {
 	f.settings = settings
+
+	return nil
+}
+
+func (f *fakeCredentials) StartOAuth(context.Context) (auth.OAuthSession, error) {
+	return nil, errors.New("OAuth is not configured in this test")
+}
+
+func (f *fakeCredentials) SaveOAuthToken(clientID string, token *oauth2.Token) error {
+	if token == nil {
+		return errors.New("OAuth token is nil")
+	}
+	f.settings.OAuth = auth.OAuthCredential{ClientID: clientID, Token: *token}
 
 	return nil
 }

@@ -6,6 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func TestManagerSavesAndLoadsSetup(t *testing.T) {
@@ -45,6 +48,85 @@ func TestManagerSavesAndLoadsAPIToken(t *testing.T) {
 	}
 	if settings.Method != MethodAPIToken || settings.Token != "api-token" || !settings.Complete() {
 		t.Fatalf("loaded settings = %#v", settings)
+	}
+}
+
+func TestManagerSavesAndLoadsOAuth(t *testing.T) {
+	t.Parallel()
+
+	vault := newMemoryVault()
+	manager := &Manager{vault: vault, browsers: &fakeBrowserSource{}, getenv: func(string) string { return "" }}
+	if err := manager.Save(Settings{Method: MethodAPIToken, Token: "saved-api-token"}); err != nil {
+		t.Fatal(err)
+	}
+	want := OAuthCredential{
+		ClientID: "client-id",
+		Token: oauth2.Token{
+			AccessToken:  "access-token",
+			TokenType:    "Bearer",
+			RefreshToken: "refresh-token",
+			Expiry:       time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	profile := Profile{Browser: "firefox", Name: "default-release"}
+	if err := manager.Save(Settings{Method: MethodOAuth, OAuth: want, Browser: profile}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := manager.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Method != MethodOAuth || !settings.HasOAuth() || !settings.PreferOAuth() || settings.Token != "saved-api-token" || settings.OAuth.ClientID != want.ClientID || settings.OAuth.Token.RefreshToken != want.Token.RefreshToken || !settings.OAuth.Token.Expiry.Equal(want.Token.Expiry) || !settings.Browser.Same(profile) {
+		t.Fatalf("loaded settings = %#v", settings)
+	}
+
+	rotated := &oauth2.Token{AccessToken: "new-access", RefreshToken: "new-refresh"}
+	if err := manager.SaveOAuthToken(want.ClientID, rotated); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = manager.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.OAuth.Token.AccessToken != "new-access" || settings.OAuth.Token.RefreshToken != "new-refresh" {
+		t.Fatalf("rotated OAuth token = %#v", settings.OAuth.Token)
+	}
+
+	manager.getenv = func(name string) string {
+		if name == tokenEnvironment {
+			return "environment-api-token"
+		}
+
+		return ""
+	}
+	settings, err = manager.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.PreferOAuth() || !settings.HasEnvironmentToken() || settings.Token != "environment-api-token" {
+		t.Fatalf("environment override settings = %#v", settings)
+	}
+}
+
+func TestManagerDoesNotCopyEnvironmentTokenIntoKeyring(t *testing.T) {
+	t.Parallel()
+
+	vault := newMemoryVault()
+	manager := &Manager{vault: vault, browsers: &fakeBrowserSource{}, getenv: func(name string) string {
+		if name == tokenEnvironment {
+			return "environment-token"
+		}
+
+		return ""
+	}}
+	if err := manager.Save(Settings{Method: MethodAPIToken}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := vault.values[apiKeyEntry]; exists {
+		t.Fatal("environment token was copied into the keyring")
+	}
+	if vault.values[methodEntry] != string(MethodAPIToken) {
+		t.Fatalf("saved method = %q", vault.values[methodEntry])
 	}
 }
 
@@ -225,6 +307,10 @@ func TestSaveValidatesSelectedMethod(t *testing.T) {
 	err = manager.Save(Settings{Method: MethodAPIToken, Token: "unsafe\ntoken"})
 	if err == nil || !strings.Contains(err.Error(), "newline") {
 		t.Fatalf("token error = %v", err)
+	}
+	err = manager.Save(Settings{Method: MethodOAuth})
+	if err == nil || !strings.Contains(err.Error(), "OAuth") {
+		t.Fatalf("OAuth error = %v", err)
 	}
 }
 

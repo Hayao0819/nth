@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/testkit"
+	"golang.org/x/oauth2"
 )
 
 func setupProgram(wizard *wizard, width, height int) *reactea.App {
@@ -17,7 +19,7 @@ func setupProgram(wizard *wizard, width, height int) *reactea.App {
 	return program
 }
 
-func TestWizardCollectsBrowser(t *testing.T) {
+func TestWizardConfiguresBrowserFeatures(t *testing.T) {
 	t.Parallel()
 
 	profiles := []auth.Profile{
@@ -25,7 +27,7 @@ func TestWizardCollectsBrowser(t *testing.T) {
 		{Browser: "firefox", Name: "default-release", Default: true},
 	}
 	var saved auth.Settings
-	wizard := newWizard(auth.Settings{}, profiles, func(settings auth.Settings) error {
+	wizard := newWizard(auth.Settings{Method: auth.MethodAPIToken, Token: "saved-token"}, profiles, nil, func(settings auth.Settings) error {
 		saved = settings
 
 		return nil
@@ -33,16 +35,16 @@ func TestWizardCollectsBrowser(t *testing.T) {
 	program := setupProgram(wizard, 80, 24)
 
 	initial := testkit.Plain(program)
-	if !strings.Contains(initial, "Authentication") || !strings.Contains(initial, "Browser session") || !strings.Contains(initial, "API token") {
+	if !strings.Contains(initial, "Authentication") || !strings.Contains(initial, "Sign in with north") || !strings.Contains(initial, "API token") || strings.Contains(initial, "Browser session") {
 		t.Fatalf("method step is incomplete:\n%s", initial)
 	}
-	testkit.SendKeys(program, "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Google Chrome · Default") || !strings.Contains(view, "Firefox · default-release") {
-		t.Fatalf("browser choices are incomplete:\n%s", view)
-	}
-	testkit.SendKeys(program, "down", "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "Firefox · default-release") {
+	testkit.SendKeys(program, "enter", "enter")
+	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "Browser features") || !strings.Contains(view, "Not configured") {
 		t.Fatalf("review is incomplete:\n%s", view)
+	}
+	testkit.SendKeys(program, "b", "b")
+	if view := testkit.Plain(program); !strings.Contains(view, "Firefox · default-release") {
+		t.Fatalf("selected browser is missing:\n%s", view)
 	}
 	testkit.SendKeys(program, "i")
 	testkit.SendKeys(program, "enter")
@@ -50,7 +52,34 @@ func TestWizardCollectsBrowser(t *testing.T) {
 	if !wizard.complete {
 		t.Fatal("setup did not complete")
 	}
-	if saved.Method != auth.MethodBrowser || saved.Browser.Browser != "firefox" || !saved.Images {
+	if saved.Method != auth.MethodAPIToken || saved.Token != "saved-token" || saved.Browser.Browser != "firefox" || !saved.Images {
+		t.Fatalf("saved settings = %#v", saved)
+	}
+}
+
+func TestWizardSignsInWithOAuth(t *testing.T) {
+	t.Parallel()
+
+	var saved auth.Settings
+	credential := auth.OAuthCredential{
+		ClientID: "client-id",
+		Token:    oauth2.Token{AccessToken: "access-token", RefreshToken: "refresh-token"},
+	}
+	start := func(context.Context) (auth.OAuthSession, error) {
+		return staticOAuthSession{credential: credential}, nil
+	}
+	wizard := newWizard(auth.Settings{}, nil, start, func(settings auth.Settings) error {
+		saved = settings
+
+		return nil
+	})
+	program := setupProgram(wizard, 72, 20)
+	testkit.SendKeys(program, "enter")
+	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "ACTIVE AUTHENTICATION") || !strings.Contains(view, "OAuth") || !strings.Contains(view, "Device authorization · refreshable") {
+		t.Fatalf("OAuth review is incomplete:\n%s", view)
+	}
+	testkit.SendKeys(program, "enter")
+	if !wizard.complete || saved.Method != auth.MethodOAuth || !saved.OAuth.Valid() || saved.OAuth.Token.RefreshToken != "refresh-token" {
 		t.Fatalf("saved settings = %#v", saved)
 	}
 }
@@ -59,14 +88,14 @@ func TestWizardCollectsAPIToken(t *testing.T) {
 	t.Parallel()
 
 	var saved auth.Settings
-	wizard := newWizard(auth.Settings{}, nil, func(settings auth.Settings) error {
+	wizard := newWizard(auth.Settings{}, nil, nil, func(settings auth.Settings) error {
 		saved = settings
 
 		return nil
 	})
 	program := setupProgram(wizard, 72, 20)
 	testkit.SendKeys(program, "down", "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "North API token") {
+	if view := testkit.Plain(program); !strings.Contains(view, "API token") {
 		t.Fatalf("token step is incomplete:\n%s", view)
 	}
 	testkit.SendKeys(program, "s", "e", "c", "r", "e", "t")
@@ -74,7 +103,7 @@ func TestWizardCollectsAPIToken(t *testing.T) {
 		t.Fatalf("API token is visible:\n%s", view)
 	}
 	testkit.SendKeys(program, "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "Configured · preferred") {
+	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "ACTIVE AUTHENTICATION") || !strings.Contains(view, "System keyring") {
 		t.Fatalf("review is incomplete:\n%s", view)
 	}
 	testkit.SendKeys(program, "enter")
@@ -87,8 +116,9 @@ func TestWizardKeepsReviewOpenAfterKeyringFailure(t *testing.T) {
 	t.Parallel()
 
 	wizard := newWizard(
-		auth.Settings{},
+		auth.Settings{Method: auth.MethodAPIToken, Token: "saved-token"},
 		[]auth.Profile{{Browser: "firefox"}},
+		nil,
 		func(auth.Settings) error { return errors.New("keyring is locked") },
 	)
 	program := setupProgram(wizard, 72, 20)
@@ -110,7 +140,7 @@ func TestWizardFollowsAMovedCookieStore(t *testing.T) {
 		Browser: auth.Profile{Browser: "chrome", Name: "Default", Path: "/old/Cookies"},
 	}
 	current := auth.Profile{Browser: "chrome", Name: "Default", Path: "/new/Network/Cookies"}
-	wizard := newWizard(initial, []auth.Profile{current}, nil)
+	wizard := newWizard(initial, []auth.Profile{current}, nil, nil)
 	if len(wizard.profiles) != 1 || !wizard.profiles[wizard.selected].Same(current) {
 		t.Fatalf("selected profile = %#v", wizard.profiles[wizard.selected])
 	}
@@ -119,10 +149,29 @@ func TestWizardFollowsAMovedCookieStore(t *testing.T) {
 func TestWizardExplainsSmallTerminal(t *testing.T) {
 	t.Parallel()
 
-	wizard := newWizard(auth.Settings{}, nil, nil)
+	wizard := newWizard(auth.Settings{}, nil, nil, nil)
 	program := setupProgram(wizard, 30, 8)
-	if view := testkit.Plain(program); !strings.Contains(view, "resize to at least 38×10") {
+	if view := testkit.Plain(program); !strings.Contains(view, "resize to at least 42×14") {
 		t.Fatalf("small-terminal message is missing:\n%s", view)
+	}
+}
+
+func TestWizardKeepsPanelAlignedAcrossSteps(t *testing.T) {
+	t.Parallel()
+
+	wizard := newWizard(auth.Settings{}, nil, nil, nil)
+	program := setupProgram(wizard, 88, 26)
+	methodView := testkit.Lines(program)
+	methodX := lineTextX(methodView, "Authentication")
+
+	testkit.SendKeys(program, "down", "enter")
+	tokenView := testkit.Lines(program)
+	tokenX := lineTextX(tokenView, "API token")
+	if methodX < 0 || tokenX != methodX {
+		t.Fatalf("content columns differ: method=%d token=%d\n%s", methodX, tokenX, testkit.Plain(program))
+	}
+	if borderX(methodView) != borderX(tokenView) {
+		t.Fatalf("panel moved between steps: method=%d token=%d", borderX(methodView), borderX(tokenView))
 	}
 }
 
@@ -130,7 +179,7 @@ func TestWizardCanBeCompletedWithTheMouse(t *testing.T) {
 	t.Parallel()
 
 	var saved auth.Settings
-	wizard := newWizard(auth.Settings{}, nil, func(settings auth.Settings) error {
+	wizard := newWizard(auth.Settings{}, nil, nil, func(settings auth.Settings) error {
 		saved = settings
 
 		return nil
@@ -158,4 +207,30 @@ func clickSetupText(t *testing.T, program *reactea.App, label string) {
 		}
 	}
 	t.Fatalf("could not find %q in setup:\n%s", label, testkit.Plain(program))
+}
+
+func lineTextX(lines []string, text string) int {
+	for _, line := range lines {
+		if x := strings.Index(line, text); x >= 0 {
+			return x
+		}
+	}
+
+	return -1
+}
+
+func borderX(lines []string) int {
+	return lineTextX(lines, "╭")
+}
+
+type staticOAuthSession struct {
+	credential auth.OAuthCredential
+}
+
+func (staticOAuthSession) Prompt() auth.OAuthPrompt {
+	return auth.OAuthPrompt{VerificationURI: "https://north.rip/device", UserCode: "ABCD-EFGH"}
+}
+
+func (s staticOAuthSession) Wait(context.Context) (auth.OAuthCredential, error) {
+	return s.credential, nil
 }
