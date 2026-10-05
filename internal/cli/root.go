@@ -10,6 +10,7 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/app"
+	diagnosticpage "github.com/Hayao0819/nth/internal/pages/diagnostic"
 	setupui "github.com/Hayao0819/nth/internal/pages/setup"
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"github.com/Hayao0819/nth/internal/services/northapi"
@@ -30,6 +31,7 @@ type dependencies struct {
 	credentials credentialService
 	setup       func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error)
 	start       func(context.Context, app.API, app.Options) error
+	diagnose    func(context.Context, diagnosticpage.API) error
 }
 
 func defaultDependencies() dependencies {
@@ -37,6 +39,7 @@ func defaultDependencies() dependencies {
 		credentials: auth.NewManager(),
 		setup:       setupui.Run,
 		start:       app.Run,
+		diagnose:    diagnosticpage.Run,
 	}
 }
 
@@ -68,6 +71,7 @@ func newCommandWith(version string, deps dependencies) *cobra.Command {
 			return err
 		},
 	})
+	command.AddCommand(newTestCommand(version, deps))
 
 	return command
 }
