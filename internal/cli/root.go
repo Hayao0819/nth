@@ -88,56 +88,78 @@ func run(command *cobra.Command, version string, deps dependencies) error {
 	if err != nil || !proceed {
 		return err
 	}
+	session, err := openSession(command.Context(), version, deps.credentials, settings)
+	if err != nil {
+		return err
+	}
+	if err := deps.start(command.Context(), session.api, app.Options{StartupNotice: session.notice, Images: settings.Images}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type clientSession struct {
+	api    app.API
+	notice string
+}
+
+func openSession(
+	ctx context.Context,
+	version string,
+	credentials credentialService,
+	settings auth.Settings,
+) (clientSession, error) {
 	var (
-		client   app.API
 		official northapi.OfficialAPI
 		web      *northapi.Client
 		notice   string
+		err      error
 	)
 	if settings.HasAPIToken() && !settings.PreferOAuth() {
 		official, err = north.NewClient(settings.Token, north.WithUserAgent("nth/"+version))
 		if err != nil {
-			return err
+			return clientSession{}, err
 		}
 	} else if settings.HasOAuth() {
 		config := auth.OAuthConfig(settings.OAuth.ClientID)
 		token := settings.OAuth.Token
 		official, err = north.NewClientWithOAuth(
-			command.Context(),
+			ctx,
 			config,
 			&token,
 			func(token *oauth2.Token) error {
-				return deps.credentials.SaveOAuthToken(settings.OAuth.ClientID, token)
+				return credentials.SaveOAuthToken(settings.OAuth.ClientID, token)
 			},
 			north.WithUserAgent("nth/"+version),
 		)
 		if err != nil {
-			return err
+			return clientSession{}, err
 		}
 	}
 	if settings.HasBrowser() {
-		status := deps.credentials.RefreshCookie(command.Context(), settings.Browser)
+		status := credentials.RefreshCookie(ctx, settings.Browser)
 		if status.Header != "" {
 			web, err = northapi.New(status.Header, unofficial.WithUserAgent("nth/"+version))
 			if err != nil {
-				return err
+				return clientSession{}, err
 			}
 		}
 		notice = cookieNotice(status)
 		refresh := func(ctx context.Context) (*northapi.Client, error) {
-			return refreshedWebClient(ctx, deps.credentials, settings.Browser, version)
+			return refreshedWebClient(ctx, credentials, settings.Browser, version)
 		}
-		client = northapi.NewHybrid(official, web, settings.Browser.Label(), refresh)
-	} else if official != nil {
-		client = official
-	} else {
-		return setupError("authentication is not configured")
+
+		return clientSession{
+			api:    northapi.NewHybrid(official, web, settings.Browser.Label(), refresh),
+			notice: notice,
+		}, nil
 	}
-	if err := deps.start(command.Context(), client, app.Options{StartupNotice: notice, Images: settings.Images}); err != nil {
-		return err
+	if official == nil {
+		return clientSession{}, setupError("authentication is not configured")
 	}
 
-	return nil
+	return clientSession{api: northapi.NewHybrid(official, nil, "", nil)}, nil
 }
 
 func refreshedWebClient(

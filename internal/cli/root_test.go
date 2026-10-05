@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/Hayao0819/nth/internal/app"
+	"github.com/Hayao0819/nth/internal/domain/bookmark"
+	"github.com/Hayao0819/nth/internal/domain/message"
 	"github.com/Hayao0819/nth/internal/domain/notification"
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"golang.org/x/oauth2"
@@ -160,6 +162,12 @@ func TestAPITokenDoesNotReadBrowserCookies(t *testing.T) {
 			if _, ok := api.(notification.API); !ok {
 				t.Fatal("API token client does not expose notifications")
 			}
+			if _, ok := api.(bookmark.API); !ok {
+				t.Fatal("API token client does not expose bookmarks")
+			}
+			if _, ok := api.(message.API); !ok {
+				t.Fatal("API token client does not expose messages")
+			}
 
 			return nil
 		},
@@ -197,6 +205,12 @@ func TestOAuthStartsTheOfficialClient(t *testing.T) {
 			started = true
 			if _, ok := api.(notification.API); !ok {
 				t.Fatal("OAuth client does not expose notifications")
+			}
+			if _, ok := api.(bookmark.API); !ok {
+				t.Fatal("OAuth client does not expose bookmarks")
+			}
+			if _, ok := api.(message.API); !ok {
+				t.Fatal("OAuth client does not expose messages")
 			}
 
 			return nil
