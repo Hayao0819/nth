@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
@@ -299,10 +300,31 @@ func TestScreenLoadsRepliesBelowThePost(t *testing.T) {
 	if !screen.replyFocused || screen.replyIndex != 0 {
 		t.Fatalf("selected reply = focused %v index %d", screen.replyFocused, screen.replyIndex)
 	}
+	likeCommand := screen.Update(program.Ctx(), testkit.Key("l"))
+	likeRequest, ok := likeCommand().(postcomponent.ActionMsg)
+	if !ok || likeRequest.Action != postcomponent.Like || likeRequest.Post.ID != "reply-1" {
+		t.Fatalf("like reply request = %#v", likeRequest)
+	}
+	like := north.LikeState{Liked: true, LikeCount: 4}
+	screen.Update(program.Ctx(), postcomponent.ReactionUpdate{PostID: "reply-1", Action: postcomponent.Like, Like: &like})
+	if !screen.replies[0].Liked || screen.replies[0].LikeCount != 4 {
+		t.Fatalf("updated reply = %#v", screen.replies[0])
+	}
 	command := screen.Update(program.Ctx(), testkit.Key("enter"))
 	request, ok := command().(postcomponent.ActionMsg)
 	if !ok || request.Action != postcomponent.ViewPost || request.Post.ID != "reply-1" {
 		t.Fatalf("open reply request = %#v", request)
+	}
+
+	likes := testkit.Find(program, "♥")
+	if len(likes) == 0 {
+		t.Fatalf("reply like action was not rendered:\n%s", testkit.Plain(program))
+	}
+	point := likes[0]
+	command = screen.Update(program.Ctx(), tea.MouseClickMsg{X: point.X, Y: point.Y, Button: tea.MouseLeft})
+	request, ok = command().(postcomponent.ActionMsg)
+	if !ok || request.Action != postcomponent.Like || request.Post.ID != "reply-1" {
+		t.Fatalf("clicked reply action = %#v", request)
 	}
 }
 

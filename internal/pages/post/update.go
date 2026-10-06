@@ -95,8 +95,7 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		}
 	}
 	if update, ok := msg.(postcomponent.ReactionUpdate); ok {
-		target := d.post.DisplayPost()
-		if target == nil || target.ID != update.PostID {
+		if !d.hasPost(update.PostID) {
 			return nil
 		}
 		delete(d.acting, update.Action)
@@ -105,19 +104,16 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 
 			return nil
 		}
+		d.applyReaction(update)
 		switch {
 		case update.Like != nil:
-			target.Liked = update.Like.Liked
-			target.LikeCount = update.Like.LikeCount
-			if target.Liked {
+			if update.Like.Liked {
 				d.notice = "Liked"
 			} else {
 				d.notice = "Like removed"
 			}
 		case update.Repost != nil:
-			target.Reposted = update.Repost.Reposted
-			target.RepostCount = update.Repost.RepostCount
-			if target.Reposted {
+			if update.Repost.Reposted {
 				d.notice = "Reposted"
 			} else {
 				d.notice = "Repost removed"
@@ -152,6 +148,9 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		}
 		if user, ok := d.userAtPosition(x, y, innerWidth, room); ok {
 			return d.requestUser(ctx, user)
+		}
+		if action, post, ok := d.replyActionAtPosition(x, y, innerWidth, room); ok {
+			return postcomponent.Request(action, post)
 		}
 		if post, ok := d.postAtPosition(x, y, innerWidth, room); ok {
 			return postcomponent.Request(postcomponent.ViewPost, post)
@@ -189,13 +188,13 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		parent := d.ancestors[len(d.ancestors)-1]
 		return postcomponent.Request(postcomponent.ViewPost, parent)
 	case reactea.Key(msg, "r", "R"):
-		return d.request(ctx, postcomponent.Reply)
+		return d.requestSelected(ctx, postcomponent.Reply)
 	case reactea.Key(msg, "t"):
-		return d.request(ctx, postcomponent.Repost)
+		return d.requestSelected(ctx, postcomponent.Repost)
 	case reactea.Key(msg, "l", "f"):
-		return d.request(ctx, postcomponent.Like)
+		return d.requestSelected(ctx, postcomponent.Like)
 	case reactea.Key(msg, "Q"):
-		return d.request(ctx, postcomponent.Quote)
+		return d.requestSelected(ctx, postcomponent.Quote)
 	case reactea.Key(msg, "e") && d.manage && d.editable:
 		return d.request(ctx, postcomponent.Edit)
 	case reactea.Key(msg, "d") && d.manage:

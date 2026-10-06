@@ -118,3 +118,29 @@ func (d *Screen) postAtPosition(x, y, width, room int) (north.Post, bool) {
 
 	return north.Post{}, false
 }
+
+func (d *Screen) replyActionAtPosition(x, y, width, room int) (postcomponent.Action, north.Post, bool) {
+	if room <= 0 {
+		return 0, north.Post{}, false
+	}
+	visible := y - pageheader.Height
+	if visible < 0 || visible >= room {
+		return 0, north.Post{}, false
+	}
+	lines, _, hits := d.content(width)
+	contentRow := clampOffset(d.offset, len(lines), room) + visible
+	for _, hit := range hits {
+		if !hit.card || contentRow != hit.bottom-1 || x < hit.left || x >= hit.right {
+			continue
+		}
+		if !postcomponent.CanInteract(&hit.post) {
+			return 0, north.Post{}, false
+		}
+		d.replyFocused = true
+		d.replyIndex = hit.index
+
+		return postcomponent.CardActionAt(x-hit.left, hit.right-hit.left), hit.post, true
+	}
+
+	return 0, north.Post{}, false
+}

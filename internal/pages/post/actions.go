@@ -71,6 +71,16 @@ func (d *Screen) request(ctx *reactea.Ctx, action postcomponent.Action) tea.Cmd 
 	return postcomponent.Request(action, d.post)
 }
 
+func (d *Screen) requestSelected(ctx *reactea.Ctx, action postcomponent.Action) tea.Cmd {
+	if d.replyFocused {
+		if reply := d.selectedReply(); reply != nil {
+			return postcomponent.Request(action, *reply)
+		}
+	}
+
+	return d.request(ctx, action)
+}
+
 func (d *Screen) requestUser(_ *reactea.Ctx, user north.User) tea.Cmd {
 	return postcomponent.Request(postcomponent.ViewAuthor, north.Post{Author: user})
 }

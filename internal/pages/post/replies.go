@@ -160,3 +160,46 @@ func (d *Screen) nearReplyEnd(width, room int) bool {
 
 	return d.offset+room >= len(d.contentLines(width))-4
 }
+
+func (d *Screen) hasPost(id string) bool {
+	if target := d.post.DisplayPost(); target != nil && target.ID == id {
+		return true
+	}
+	for index := range d.ancestors {
+		if target := d.ancestors[index].DisplayPost(); target != nil && target.ID == id {
+			return true
+		}
+	}
+	for index := range d.replies {
+		if target := d.replies[index].DisplayPost(); target != nil && target.ID == id {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (d *Screen) applyReaction(update postcomponent.ReactionUpdate) {
+	posts := make([]*north.Post, 0, len(d.ancestors)+len(d.replies)+1)
+	posts = append(posts, &d.post)
+	for index := range d.ancestors {
+		posts = append(posts, &d.ancestors[index])
+	}
+	for index := range d.replies {
+		posts = append(posts, &d.replies[index])
+	}
+	for _, post := range posts {
+		target := post.DisplayPost()
+		if target == nil || target.ID != update.PostID {
+			continue
+		}
+		if update.Like != nil {
+			target.Liked = update.Like.Liked
+			target.LikeCount = update.Like.LikeCount
+		}
+		if update.Repost != nil {
+			target.Reposted = update.Repost.Reposted
+			target.RepostCount = update.Repost.RepostCount
+		}
+	}
+}
