@@ -22,7 +22,6 @@ type oauthCompletedMsg struct {
 func (w *wizard) beginOAuth(ctx context.Context) tea.Cmd {
 	w.stopOAuth()
 	w.problem = ""
-	w.oauth = auth.OAuthCredential{}
 	w.prompt = auth.OAuthPrompt{}
 	if w.startOAuth == nil {
 		w.problem = "OAuth sign-in is not available"

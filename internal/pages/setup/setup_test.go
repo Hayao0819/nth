@@ -9,6 +9,7 @@ import (
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/testkit"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/oauth2"
 )
 
@@ -35,11 +36,11 @@ func TestWizardConfiguresBrowserFeatures(t *testing.T) {
 	program := setupProgram(wizard, 80, 24)
 
 	initial := testkit.Plain(program)
-	if !strings.Contains(initial, "Authentication") || !strings.Contains(initial, "Sign in with north") || !strings.Contains(initial, "API token") || strings.Contains(initial, "Browser session") {
+	if !strings.Contains(initial, "Choose how to sign in") || !strings.Contains(initial, "Sign in with north") || !strings.Contains(initial, "API token") || strings.Contains(initial, "Browser session") {
 		t.Fatalf("method step is incomplete:\n%s", initial)
 	}
 	testkit.SendKeys(program, "enter", "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "Browser features") || !strings.Contains(view, "Not configured") {
+	if view := testkit.Plain(program); !strings.Contains(view, "Review and save") || !strings.Contains(view, "Browser cookies") || !strings.Contains(view, "Not configured") {
 		t.Fatalf("review is incomplete:\n%s", view)
 	}
 	testkit.SendKeys(program, "b", "b")
@@ -75,12 +76,42 @@ func TestWizardSignsInWithOAuth(t *testing.T) {
 	})
 	program := setupProgram(wizard, 72, 20)
 	testkit.SendKeys(program, "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "ACTIVE AUTHENTICATION") || !strings.Contains(view, "OAuth") || !strings.Contains(view, "Device authorization · refreshable") {
+	if view := testkit.Plain(program); !strings.Contains(view, "Review and save") || !strings.Contains(view, "SIGN-IN") || !strings.Contains(view, "north account") || !strings.Contains(view, "Signed in · token refreshes automatically") {
 		t.Fatalf("OAuth review is incomplete:\n%s", view)
 	}
 	testkit.SendKeys(program, "enter")
 	if !wizard.complete || saved.Method != auth.MethodOAuth || !saved.OAuth.Valid() || saved.OAuth.Token.RefreshToken != "refresh-token" {
 		t.Fatalf("saved settings = %#v", saved)
+	}
+}
+
+func TestWizardReusesCompletedOAuthAfterGoingBack(t *testing.T) {
+	t.Parallel()
+
+	credential := auth.OAuthCredential{
+		ClientID: "client-id",
+		Token:    oauth2.Token{AccessToken: "access-token", RefreshToken: "refresh-token"},
+	}
+	starts := 0
+	start := func(context.Context) (auth.OAuthSession, error) {
+		starts++
+
+		return staticOAuthSession{credential: credential}, nil
+	}
+	wizard := newWizard(auth.Settings{}, nil, start, func(auth.Settings) error { return nil })
+	program := setupProgram(wizard, 72, 20)
+
+	testkit.SendKeys(program, "enter")
+	if starts != 1 || !wizard.oauth.Valid() || wizard.step != stepReview {
+		t.Fatalf("initial sign-in: starts=%d step=%d credential=%#v", starts, wizard.step, wizard.oauth)
+	}
+	testkit.SendKeys(program, "esc")
+	if view := testkit.Plain(program); wizard.step != stepMethod || !strings.Contains(view, "READY") || !strings.Contains(view, "r sign in again") {
+		t.Fatalf("completed sign-in was not preserved:\n%s", view)
+	}
+	testkit.SendKeys(program, "enter")
+	if starts != 1 || wizard.step != stepReview || !wizard.oauth.Valid() {
+		t.Fatalf("sign-in restarted: starts=%d step=%d credential=%#v", starts, wizard.step, wizard.oauth)
 	}
 }
 
@@ -103,7 +134,7 @@ func TestWizardCollectsAPIToken(t *testing.T) {
 		t.Fatalf("API token is visible:\n%s", view)
 	}
 	testkit.SendKeys(program, "enter")
-	if view := testkit.Plain(program); !strings.Contains(view, "Ready to start") || !strings.Contains(view, "ACTIVE AUTHENTICATION") || !strings.Contains(view, "System keyring") {
+	if view := testkit.Plain(program); !strings.Contains(view, "Review and save") || !strings.Contains(view, "SIGN-IN") || !strings.Contains(view, "system keyring") {
 		t.Fatalf("review is incomplete:\n%s", view)
 	}
 	testkit.SendKeys(program, "enter")
@@ -162,11 +193,11 @@ func TestWizardKeepsPanelAlignedAcrossSteps(t *testing.T) {
 	wizard := newWizard(auth.Settings{}, nil, nil, nil)
 	program := setupProgram(wizard, 88, 26)
 	methodView := testkit.Lines(program)
-	methodX := lineTextX(methodView, "Authentication")
+	methodX := lineTextX(methodView, "Choose how to sign in")
 
 	testkit.SendKeys(program, "down", "enter")
 	tokenView := testkit.Lines(program)
-	tokenX := lineTextX(tokenView, "API token")
+	tokenX := lineTextX(tokenView, "Enter an API token")
 	if methodX < 0 || tokenX != methodX {
 		t.Fatalf("content columns differ: method=%d token=%d\n%s", methodX, tokenX, testkit.Plain(program))
 	}
@@ -190,7 +221,7 @@ func TestWizardCanBeCompletedWithTheMouse(t *testing.T) {
 	clickSetupText(t, program, "enter continue")
 	testkit.SendKeys(program, "s", "e", "c", "r", "e", "t")
 	clickSetupText(t, program, "enter continue")
-	clickSetupText(t, program, "enter save and start")
+	clickSetupText(t, program, "enter save")
 
 	if !wizard.complete || saved.Method != auth.MethodAPIToken || saved.Token != "secret" {
 		t.Fatalf("saved settings = %#v", saved)
@@ -211,7 +242,7 @@ func clickSetupText(t *testing.T, program *reactea.App, label string) {
 
 func lineTextX(lines []string, text string) int {
 	for _, line := range lines {
-		if x := strings.Index(line, text); x >= 0 {
+		if x := strings.Index(ansi.Strip(line), text); x >= 0 {
 			return x
 		}
 	}

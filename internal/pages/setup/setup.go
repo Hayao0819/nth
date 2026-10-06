@@ -182,6 +182,9 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 			w.moveMethod(-1)
 		case reactea.Key(msg, "down", "j", "right", "l", "space"):
 			w.moveMethod(1)
+		case reactea.Key(msg, "r") && w.method == auth.MethodOAuth && w.oauth.Valid():
+			w.step = stepCredential
+			return w.beginOAuth(ctx.Context())
 		case reactea.Key(msg, "enter"):
 			switch w.method {
 			case auth.MethodAPIToken:
@@ -193,6 +196,11 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 				w.step = stepCredential
 				return w.token.Focus()
 			case auth.MethodOAuth:
+				if w.oauth.Valid() {
+					w.step = stepReview
+
+					return nil
+				}
 				w.step = stepCredential
 				return w.beginOAuth(ctx.Context())
 			}
@@ -226,12 +234,6 @@ func (w *wizard) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 				w.cancelOAuth()
 				w.step = stepMethod
 			case reactea.Key(msg, "enter") && !w.oauthBusy:
-				if w.oauth.Valid() {
-					w.step = stepReview
-
-					return nil
-				}
-
 				return w.beginOAuth(ctx.Context())
 			}
 		}
@@ -314,7 +316,7 @@ func (w *wizard) handleClick(ctx *reactea.Ctx, msg tea.Msg) (tea.Cmd, bool) {
 			return w.token.Focus(), true
 		}
 	case stepReview:
-		if ui.TextAt(line, x, "Browser features") {
+		if ui.TextAt(line, x, "Browser cookies") {
 			w.cycleBrowser()
 
 			return nil, true
@@ -326,13 +328,22 @@ func (w *wizard) handleClick(ctx *reactea.Ctx, msg tea.Msg) (tea.Cmd, bool) {
 		}
 	}
 
-	if ui.TextAt(line, x, "enter continue") {
+	if ui.TextAt(line, x, "enter continue") || ui.TextAt(line, x, "enter review") {
 		return w.Update(ctx, tea.KeyPressMsg{Code: tea.KeyEnter}), true
 	}
-	if ui.TextAt(line, x, "enter save and start") || ui.TextAt(line, x, "enter save") {
+	if ui.TextAt(line, x, "enter save") {
 		return w.Update(ctx, tea.KeyPressMsg{Code: tea.KeyEnter}), true
 	}
-	if ui.TextAt(line, x, "esc back") {
+	if ui.TextAt(line, x, "r sign in again") {
+		return w.Update(ctx, tea.KeyPressMsg{Code: 'r'}), true
+	}
+	if ui.TextAt(line, x, "b browser") {
+		return w.Update(ctx, tea.KeyPressMsg{Code: 'b'}), true
+	}
+	if ui.TextAt(line, x, "i images") {
+		return w.Update(ctx, tea.KeyPressMsg{Code: 'i'}), true
+	}
+	if ui.TextAt(line, x, "esc back") || ui.TextAt(line, x, "esc cancel") {
 		return w.Update(ctx, tea.KeyPressMsg{Code: tea.KeyEscape}), true
 	}
 

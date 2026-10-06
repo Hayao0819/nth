@@ -50,7 +50,7 @@ func (w *wizard) Render(ctx *reactea.Ctx) string {
 
 	header := ui.Sides(
 		w.theme.Brand.Render("nth setup"),
-		w.theme.Dim.Render(fmt.Sprintf("%d / %d", w.step+1, stepReview+1)),
+		w.theme.Dim.Render(fmt.Sprintf("Step %d of %d", w.step+1, stepReview+1)),
 		contentWidth,
 	)
 	lines := []string{header, w.progress(contentWidth), ""}
@@ -86,7 +86,7 @@ func (w *wizard) screen(compact bool, width int) []string {
 }
 
 func (w *wizard) progress(width int) string {
-	labels := []string{"1  Account", "2  Verify", "3  Finish"}
+	labels := []string{"1  Method", "2  Credentials", "3  Review"}
 	for index, label := range labels {
 		name := strings.TrimPrefix(label, fmt.Sprintf("%d  ", index+1))
 		switch {
@@ -104,32 +104,46 @@ func (w *wizard) progress(width int) string {
 
 func (w *wizard) methodScreen(compact bool, width int) []string {
 	lines := []string{
-		w.theme.Heading.Render("Authentication"),
+		w.theme.Heading.Render("Choose how to sign in"),
 		w.currentAuthentication(),
 		"",
 	}
 	if !compact {
-		lines = append(lines, w.theme.Dim.Render("Choose the credential used for public API requests."), "")
+		instruction := "Select a sign-in method. Nothing changes until you save."
+		if w.envToken {
+			instruction = "NORTH_API_KEY is active and always takes priority."
+		}
+		lines = append(lines, w.theme.Dim.Render(instruction), "")
+	}
+	oauthDetail := "Authorize nth in your browser · recommended"
+	if w.oauth.Valid() {
+		oauthDetail = "Signed in · token refreshes automatically"
 	}
 	lines = append(lines, w.authChoice(
 		w.method == auth.MethodOAuth,
 		auth.MethodOAuth,
 		"Sign in with north",
-		"Browser code · refreshes automatically",
+		oauthDetail,
 		compact,
 		width,
 	)...)
 	lines = append(lines, "")
+	tokenDetail := "Paste a developer token · advanced"
+	if w.envToken {
+		tokenDetail = "NORTH_API_KEY · active"
+	} else if strings.TrimSpace(w.token.Value()) != "" {
+		tokenDetail = "Saved in the system keyring"
+	}
 	lines = append(lines, w.authChoice(
 		w.method == auth.MethodAPIToken,
 		auth.MethodAPIToken,
 		"API token",
-		"Paste a token · advanced",
+		tokenDetail,
 		compact,
 		width,
 	)...)
 	if !compact {
-		lines = append(lines, "", w.theme.Dim.Render("Browser features are optional and configured after sign-in."))
+		lines = append(lines, "", w.theme.Dim.Render("Optional browser cookies are configured on the review step."))
 	}
 
 	return lines
@@ -165,9 +179,9 @@ func (w *wizard) authChoice(
 		marker = w.theme.Active.Render("▌ ")
 		style = w.theme.Active
 	}
-	badge := ""
-	if w.currentMethod() == method {
-		badge = w.theme.Dim.Render("CURRENT")
+	badge := w.authBadge(method)
+	if badge != "" {
+		badge = w.theme.Active.Render(badge)
 	}
 	lines := []string{ui.Sides(marker+style.Render(title), badge, width)}
 	if !compact {
@@ -177,35 +191,53 @@ func (w *wizard) authChoice(
 	return lines
 }
 
-func (w *wizard) currentMethod() auth.Method {
-	if w.envToken {
-		return auth.MethodAPIToken
+func (w *wizard) authBadge(method auth.Method) string {
+	switch method {
+	case auth.MethodOAuth:
+		if w.oauth.Valid() {
+			if w.savedMethod == method {
+				return "SAVED"
+			}
+
+			return "READY"
+		}
+	case auth.MethodAPIToken:
+		if w.envToken {
+			return "ACTIVE"
+		}
+		if strings.TrimSpace(w.token.Value()) != "" {
+			if w.savedMethod == method {
+				return "SAVED"
+			}
+
+			return "READY"
+		}
 	}
 
-	return w.savedMethod
+	return ""
 }
 
 func (w *wizard) tokenScreen(compact bool) []string {
 	lines := []string{
-		w.theme.Heading.Render("API token"),
-		w.theme.Dim.Render("Stored in the system keyring."),
+		w.theme.Heading.Render("Enter an API token"),
+		w.theme.Dim.Render("The token will be stored in the system keyring."),
 		"",
 	}
 	if !compact {
 		lines = append(lines, w.theme.Dim.Render("Create a read/write token in north Settings › Developer."), "")
 	}
 
-	return append(lines, w.theme.Accent.Render("› ")+w.token.View())
+	return append(lines, w.theme.Dim.Render("TOKEN"), w.theme.Accent.Render("› ")+w.token.View())
 }
 
 func (w *wizard) oauthScreen(compact bool, width int) []string {
-	lines := []string{w.theme.Heading.Render("Link your north account")}
+	lines := []string{w.theme.Heading.Render("Sign in with north")}
 	if w.prompt.VerificationURI == "" {
 		if w.oauthBusy {
-			return append(lines, "", w.theme.Dim.Render("Requesting a browser code…"))
+			return append(lines, "", w.theme.Dim.Render("Requesting an authorization code…"))
 		}
 
-		return append(lines, "", w.theme.Dim.Render("Press enter to try again."))
+		return append(lines, "", w.theme.Dim.Render("Sign-in stopped. Press enter to try again."))
 	}
 
 	address := w.prompt.VerificationURIComplete
@@ -213,17 +245,23 @@ func (w *wizard) oauthScreen(compact bool, width int) []string {
 		address = w.prompt.VerificationURI
 	}
 	lines = append(lines,
-		w.theme.Dim.Render("1  Open this address"),
-		"   "+w.theme.Accent.Render(ui.Clip(ui.SafeInline(address), max(1, width-3))),
+		w.theme.Active.Render("● Waiting for approval"),
 		"",
-		w.theme.Dim.Render("2  Enter this code"),
-		lipgloss.PlaceHorizontal(width, lipgloss.Center, w.theme.Brand.Render(ui.SafeInline(w.prompt.UserCode))),
+		w.theme.Dim.Render("1  Open this URL in your browser"),
+		"   "+w.theme.Accent.Render(ui.Clip(ui.SafeInline(address), max(1, width-3))),
 	)
+	if w.prompt.UserCode != "" {
+		lines = append(lines,
+			"",
+			w.theme.Dim.Render("2  Enter this code if north asks for it"),
+			lipgloss.PlaceHorizontal(width, lipgloss.Center, w.theme.Brand.Render(ui.SafeInline(w.prompt.UserCode))),
+		)
+	}
 	if !compact {
 		lines = append(lines,
 			"",
-			w.theme.Dim.Render("Waiting for north to confirm this device…"),
-			w.theme.Dim.Render("nth never receives your password."),
+			w.theme.Dim.Render("Approve nth in the browser. Setup continues automatically."),
+			w.theme.Dim.Render("Your password is entered only on north."),
 		)
 	}
 
@@ -233,19 +271,27 @@ func (w *wizard) oauthScreen(compact bool, width int) []string {
 func (w *wizard) review(compact bool, width int) []string {
 	title, detail := w.selectedAuthentication()
 	lines := []string{
-		w.theme.Heading.Render("Ready to start"),
-		w.theme.Dim.Render("ACTIVE AUTHENTICATION"),
-		w.theme.Active.Render("▌ " + title),
+		w.theme.Heading.Render("Review and save"),
+		w.theme.Dim.Render("SIGN-IN"),
+		w.theme.Active.Render("✓ " + title),
 		"  " + w.theme.Dim.Render(detail),
-		"",
-		w.theme.Dim.Render("OPTIONAL FEATURES"),
-		w.settingLine("Browser features", w.browserState(), w.browserKey(), width),
-		w.settingLine("Terminal images", imageState(w.images), "i toggle", width),
 	}
+	if w.envToken && w.method == auth.MethodOAuth {
+		for _, line := range ui.WrappedLines("NORTH_API_KEY remains active; OAuth will be saved as a fallback.", max(1, width-2)) {
+			lines = append(lines, w.theme.Warn.Render("  "+line))
+		}
+	}
+	lines = append(lines,
+		"",
+		w.theme.Dim.Render("OPTIONAL"),
+		w.settingLine("Browser cookies", w.browserState(), w.browserKey(), width),
+		w.settingLine("Terminal images", imageState(w.images), "i toggle", width),
+	)
 	if !compact {
 		lines = append(lines,
 			"",
-			w.theme.Dim.Render("Browser cookies are only used when the public API cannot provide a feature."),
+			w.theme.Dim.Render("Browser cookies are used only for features missing from the public API."),
+			w.theme.Dim.Render("Press enter to save these settings."),
 		)
 	}
 
@@ -253,14 +299,14 @@ func (w *wizard) review(compact bool, width int) []string {
 }
 
 func (w *wizard) selectedAuthentication() (string, string) {
-	if w.envToken {
-		return "API token", "NORTH_API_KEY · always preferred"
-	}
 	if w.method == auth.MethodOAuth {
-		return "OAuth", "Device authorization · refreshable"
+		return "north account", "Signed in · token refreshes automatically"
+	}
+	if w.envToken {
+		return "API token", "NORTH_API_KEY · active"
 	}
 
-	return "API token", "System keyring"
+	return "API token", "Will be stored in the system keyring"
 }
 
 func (w *wizard) browserState() string {
@@ -302,6 +348,10 @@ func (w *wizard) settingLine(label, value, key string, width int) string {
 func (w *wizard) footer(width int) string {
 	footer := "↑/↓ choose   enter continue   ctrl+c exit"
 	switch w.step {
+	case stepMethod:
+		if w.method == auth.MethodOAuth && w.oauth.Valid() {
+			footer = "enter review   r sign in again   ctrl+c exit"
+		}
 	case stepCredential:
 		if w.method == auth.MethodOAuth {
 			footer = "esc cancel   ctrl+c exit"
@@ -312,14 +362,34 @@ func (w *wizard) footer(width int) string {
 			footer = "enter continue   esc back   ctrl+c exit"
 		}
 	case stepReview:
-		footer = "b browser   i images   enter save and start   esc back"
+		footer = "i images   enter save   esc back"
+		if len(w.profiles) > 0 {
+			footer = "b browser   " + footer
+		}
 	}
 	if width < 58 {
 		switch w.step {
 		case stepReview:
-			footer = "b browser   i images   enter save"
+			footer = "i images   enter save"
+			if len(w.profiles) > 0 {
+				footer = "b browser   " + footer
+			}
 		case stepCredential:
-			footer = "enter continue   esc back"
+			if w.method == auth.MethodOAuth {
+				if w.oauthBusy {
+					footer = "esc cancel"
+				} else {
+					footer = "enter retry   esc back"
+				}
+			} else {
+				footer = "enter continue   esc back"
+			}
+		case stepMethod:
+			if w.method == auth.MethodOAuth && w.oauth.Valid() {
+				footer = "enter review   r sign in again"
+			} else {
+				footer = "↑/↓ choose   enter continue"
+			}
 		default:
 			footer = "↑/↓ choose   enter continue"
 		}
