@@ -39,9 +39,9 @@ func TestRootNavigationSearchAndCompose(t *testing.T) {
 	}
 
 	testkit.SendKeys(program, "/", "g", "o")
-	search, ok := root.page.component.(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchpage.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "go" {
-		t.Fatalf("search page = %v component = %T", root.page.kind, root.page.component)
+		t.Fatalf("search page = %v component = %T", root.page.kind, root.currentPage())
 	}
 	if len(service.searchCalls) == 0 || service.searchCalls[len(service.searchCalls)-1] != "go" {
 		t.Fatalf("search calls = %#v", service.searchCalls)
@@ -289,9 +289,9 @@ func TestWideLayout(t *testing.T) {
 	}
 	testkit.Click(program, asideLeft+4, 2)
 	testkit.SendKeys(program, "n", "o", "r", "t", "h")
-	search, ok := root.page.component.(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchpage.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "north" {
-		t.Fatalf("aside search page = %v component = %T", root.page.kind, root.page.component)
+		t.Fatalf("aside search page = %v component = %T", root.page.kind, root.currentPage())
 	}
 }
 
@@ -320,17 +320,17 @@ func TestWideLayoutTrendsOpenSearch(t *testing.T) {
 		t.Fatalf("trend hits = %#v", layout.trends)
 	}
 	testkit.Click(program, asideLeft+4, layout.trends[0].first)
-	search, ok := root.page.component.(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchpage.Screen)
 	if !ok {
-		t.Fatalf("trend search = %T", root.page.component)
+		t.Fatalf("trend search = %T", root.currentPage())
 	}
 	if search.Query() != "#golang" {
 		t.Fatalf("trend query = %q", search.Query())
 	}
 	testkit.SendKeys(program, "esc", "7")
-	search, ok = root.page.component.(*searchpage.Screen)
+	search, ok = root.currentPage().(*searchpage.Screen)
 	if !ok {
-		t.Fatalf("keyboard trend search = %T", root.page.component)
+		t.Fatalf("keyboard trend search = %T", root.currentPage())
 	}
 	if search.Query() != "North" {
 		t.Fatalf("keyboard trend query = %q", search.Query())
@@ -434,9 +434,9 @@ func TestComposeAndSearchButtons(t *testing.T) {
 	}
 
 	testkit.SendKeys(program, "/", "n", "o", "r", "t", "h")
-	search, ok := root.page.component.(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchpage.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "north" {
-		t.Fatalf("search page = %v component = %T", root.page.kind, root.page.component)
+		t.Fatalf("search page = %v component = %T", root.page.kind, root.currentPage())
 	}
 	if len(service.searchCalls) == 0 || service.searchCalls[len(service.searchCalls)-1] != "north" {
 		t.Fatalf("search calls = %#v", service.searchCalls)
@@ -555,7 +555,7 @@ func TestProfilePostOpensWithEnter(t *testing.T) {
 	if plain := testkit.Plain(program); !strings.Contains(plain, "my post") || !strings.Contains(plain, "r  Reply") {
 		t.Fatalf("profile post details did not open:\n%s", plain)
 	}
-	if root.page.kind != postPage || len(root.history) == 0 || root.history[len(root.history)-1].kind != profilePage {
+	if root.page.kind != postPage || len(root.history) == 0 || pageStateForRoute(root.history[len(root.history)-1]).kind != profilePage {
 		t.Fatalf("profile post page/history = %v %#v", root.page.kind, root.history)
 	}
 }
