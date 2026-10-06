@@ -19,14 +19,7 @@ builds:
           -s -w -X github.com/Hayao0819/nth/internal/version.Version={{.Version}}
 archives:
     - formats:
-        - tar.gz
-      files:
-        - LICENSE
-        - README.md
-      format_overrides:
-        - goos: windows
-          formats:
-            - zip
+        - binary
 checksum:
     name_template: checksums.txt
 changelog:
