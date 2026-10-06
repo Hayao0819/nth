@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
+	"github.com/Hayao0819/reactea/v2/render"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -50,35 +51,23 @@ func SafeInline(value string) string {
 }
 
 func Clip(value string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-
-	return ansi.Truncate(value, width, "…")
+	return render.Ellipsize(value, width)
 }
 
 func Left(value string, width int) string {
-	value = Clip(value, width)
-	if gap := width - lipgloss.Width(value); gap > 0 {
-		value += strings.Repeat(" ", gap)
-	}
-
-	return value
+	return render.Left(Clip(value, width), width)
 }
 
 func Sides(leftValue, rightValue string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if rightWidth := lipgloss.Width(rightValue); rightWidth >= width {
-		return Clip(rightValue, width)
-	} else if gap := width - lipgloss.Width(leftValue) - rightWidth; gap > 0 {
-		return leftValue + strings.Repeat(" ", gap) + rightValue
+	rightWidth := lipgloss.Width(rightValue)
+	if rightWidth >= width {
+		return render.Right(Clip(rightValue, width), width)
 	}
 
-	rightWidth := lipgloss.Width(rightValue)
-
-	return Clip(leftValue, max(0, width-rightWidth-1)) + " " + rightValue
+	return render.Sides(Clip(leftValue, width-rightWidth-1), rightValue, width)
 }
 
 func Columns(values []string, width int) string {
@@ -126,14 +115,7 @@ func TextAt(line string, x int, label string) bool {
 }
 
 func Fit(value string, width, height int) string {
-	if width <= 0 || height <= 0 {
-		return ""
-	}
-
-	return lipgloss.NewStyle().
-		Width(width).Height(height).
-		MaxWidth(width).MaxHeight(height).
-		Render(value)
+	return render.Fit(value, width, height)
 }
 
 func WrappedLines(value string, width int) []string {
