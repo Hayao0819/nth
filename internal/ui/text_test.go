@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -67,6 +68,9 @@ func TestFriendlyError(t *testing.T) {
 	authError := &north.APIError{StatusCode: 401, Errors: []north.ErrorDetail{{Code: 32}}}
 	if got := FriendlyError(authError); !strings.Contains(got, "nth setup") {
 		t.Errorf("authentication error = %q", got)
+	}
+	if got := FriendlyError(unofficial.ErrNotAuthenticated); !strings.Contains(got, "retry") || strings.Contains(got, "restart") {
+		t.Errorf("browser authentication error = %q", got)
 	}
 	if got := FriendlyError(errors.New("offline\x1b[31m\nbad")); got != "offline bad" {
 		t.Errorf("plain FriendlyError = %q", got)

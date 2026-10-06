@@ -159,7 +159,7 @@ func FriendlyError(err error) string {
 	if errors.As(err, &webError) {
 		switch {
 		case webError.StatusCode == 401:
-			return "Browser session expired — sign in to north.rip and restart nth"
+			return "Browser session expired — sign in to north.rip and retry"
 		case webError.StatusCode == 429:
 			return "Rate limit reached"
 		case webError.Message != "":
@@ -169,7 +169,7 @@ func FriendlyError(err error) string {
 		}
 	}
 	if errors.Is(err, unofficial.ErrNotAuthenticated) {
-		return "Browser session expired — sign in to north.rip and restart nth"
+		return "Browser session expired — sign in to north.rip and retry"
 	}
 
 	return SafeInline(err.Error())
