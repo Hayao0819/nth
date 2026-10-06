@@ -55,6 +55,31 @@
                         actionlint .github/workflows/*.yml
                         touch $out
                     '';
+                    installers =
+                        pkgs.runCommand "nth-installers-check"
+                            {
+                                nativeBuildInputs = [
+                                    pkgs.powershell
+                                    pkgs.shellcheck
+                                ];
+                            }
+                            ''
+                                cd ${self}
+                                shellcheck install.sh
+                                pwsh -NoLogo -NoProfile -NonInteractive -Command '
+                                    $tokens = $null
+                                    $parseErrors = $null
+                                    [void] [System.Management.Automation.Language.Parser]::ParseFile(
+                                        (Resolve-Path "install.ps1"),
+                                        [ref] $tokens,
+                                        [ref] $parseErrors
+                                    )
+                                    if ($parseErrors.Count -gt 0) {
+                                        throw ($parseErrors.Message -join [Environment]::NewLine)
+                                    }
+                                '
+                                touch $out
+                            '';
                     release =
                         pkgs.runCommand "nth-goreleaser-check"
                             {
@@ -87,6 +112,7 @@
                         pkgs.goreleaser
                         pkgs.actionlint
                         pkgs.markdownlint-cli2
+                        pkgs.shellcheck
                         pkgs.gnumake
                         treefmtEval.config.build.wrapper
                     ];

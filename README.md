@@ -11,11 +11,27 @@
 
 ## インストール
 
-```bash
+Linux、macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Hayao0819/nth/main/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Hayao0819/nth/main/install.ps1 | iex
+```
+
+インストール先は`~/.local/bin`です。`NTH_INSTALL_DIR`で変更できます。
+
+Goからインストールする場合:
+
+```sh
 go install github.com/Hayao0819/nth
 ```
 
-Go 1.26以上が必要です。
+Goからインストールする場合はGo 1.26以上が必要です。
 
 ## 使い方
 
