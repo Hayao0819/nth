@@ -297,10 +297,13 @@ func TestMissingBrowserSessionStartsRefreshableClient(t *testing.T) {
 }
 
 type fakeCredentials struct {
-	settings  auth.Settings
-	profiles  []auth.Profile
-	status    auth.CookieStatus
-	refreshes int
+	settings    auth.Settings
+	profiles    []auth.Profile
+	status      auth.CookieStatus
+	resetResult auth.ResetResult
+	resetErr    error
+	refreshes   int
+	resets      int
 }
 
 func (f *fakeCredentials) Load() (auth.Settings, error) {
@@ -315,6 +318,12 @@ func (f *fakeCredentials) Save(settings auth.Settings) error {
 	f.settings = settings
 
 	return nil
+}
+
+func (f *fakeCredentials) Reset() (auth.ResetResult, error) {
+	f.resets++
+
+	return f.resetResult, f.resetErr
 }
 
 func (f *fakeCredentials) StartOAuth(context.Context) (auth.OAuthSession, error) {

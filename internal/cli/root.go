@@ -22,6 +22,7 @@ type credentialService interface {
 	Load() (auth.Settings, error)
 	Profiles(context.Context) []auth.Profile
 	Save(auth.Settings) error
+	Reset() (auth.ResetResult, error)
 	StartOAuth(context.Context) (auth.OAuthSession, error)
 	SaveOAuthToken(string, *oauth2.Token) error
 	RefreshCookie(context.Context, auth.Profile) auth.CookieStatus
@@ -71,6 +72,7 @@ func newCommandWith(version string, deps dependencies) *cobra.Command {
 			return err
 		},
 	})
+	command.AddCommand(newResetCommand(deps))
 	command.AddCommand(newTestCommand(version, deps))
 
 	return command

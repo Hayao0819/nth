@@ -93,6 +93,11 @@ type CookieStatus struct {
 	Err    error
 }
 
+// ResetResult reports settings outside nth's system keyring.
+type ResetResult struct {
+	Environment []string
+}
+
 // Manager reads credentials from the system keyring and local browsers.
 type Manager struct {
 	vault       vault
@@ -261,6 +266,24 @@ func (m *Manager) Save(settings Settings) error {
 	}
 
 	return nil
+}
+
+// Reset deletes every nth entry from the system keyring.
+func (m *Manager) Reset() (ResetResult, error) {
+	if err := m.vault.DeleteAll(); err != nil {
+		return ResetResult{}, fmt.Errorf("delete nth settings from keyring: %w", err)
+	}
+
+	var result ResetResult
+	if m.getenv != nil {
+		for _, name := range []string{tokenEnvironment, clientIDEnvironment} {
+			if strings.TrimSpace(m.getenv(name)) != "" {
+				result.Environment = append(result.Environment, name)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // RefreshCookie reloads north.rip cookies from the selected browser. If that

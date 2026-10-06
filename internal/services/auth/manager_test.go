@@ -162,6 +162,47 @@ func TestManagerKeepsCredentialsWhenSwitchingMethods(t *testing.T) {
 	}
 }
 
+func TestManagerResetDeletesEveryKeyringEntry(t *testing.T) {
+	t.Parallel()
+
+	vault := newMemoryVault()
+	vault.values[methodEntry] = string(MethodOAuth)
+	vault.values[apiKeyEntry] = "api-token"
+	vault.values[oauthEntry] = "oauth-token"
+	vault.values[browserEntry] = "browser"
+	vault.values[cookieEntry] = "cookie"
+	vault.values[imagesEntry] = "true"
+	vault.values["future-setting"] = "value"
+	manager := &Manager{vault: vault, getenv: func(name string) string {
+		if name == tokenEnvironment || name == clientIDEnvironment {
+			return "set"
+		}
+
+		return ""
+	}}
+
+	result, err := manager.Reset()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vault.values) != 0 {
+		t.Fatalf("keyring values remain: %#v", vault.values)
+	}
+	if len(result.Environment) != 2 || result.Environment[0] != tokenEnvironment || result.Environment[1] != clientIDEnvironment {
+		t.Fatalf("environment = %#v", result.Environment)
+	}
+}
+
+func TestManagerResetReportsKeyringFailure(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("keyring is locked")
+	manager := &Manager{vault: &memoryVault{values: make(map[string]string), deleteErr: want}}
+	if _, err := manager.Reset(); !errors.Is(err, want) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestEnvironmentOverridesSavedAPIToken(t *testing.T) {
 	t.Parallel()
 
@@ -315,9 +356,10 @@ func TestSaveValidatesSelectedMethod(t *testing.T) {
 }
 
 type memoryVault struct {
-	values map[string]string
-	getErr error
-	setErr error
+	values    map[string]string
+	getErr    error
+	setErr    error
+	deleteErr error
 }
 
 type entryErrorVault struct {
@@ -343,6 +385,12 @@ func (v *entryErrorVault) Set(name, value string) error {
 	return nil
 }
 
+func (v *entryErrorVault) DeleteAll() error {
+	clear(v.values)
+
+	return nil
+}
+
 func newMemoryVault() *memoryVault {
 	return &memoryVault{values: make(map[string]string)}
 }
@@ -364,6 +412,15 @@ func (v *memoryVault) Set(name, value string) error {
 		return v.setErr
 	}
 	v.values[name] = value
+
+	return nil
+}
+
+func (v *memoryVault) DeleteAll() error {
+	if v.deleteErr != nil {
+		return v.deleteErr
+	}
+	clear(v.values)
 
 	return nil
 }
