@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/navigation"
 	notificationdomain "github.com/Hayao0819/nth/internal/domain/notification"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
@@ -117,6 +119,49 @@ func TestPageDoesNotMarkAnUnloadedFeedAsRead(t *testing.T) {
 	}
 	if plain := testkit.Plain(program); !strings.Contains(plain, "offline") || !strings.Contains(plain, "Press . to try again") {
 		t.Fatalf("notification load error is incomplete:\n%s", plain)
+	}
+}
+
+func TestClickingActorOpensProfileAndCardOpensPost(t *testing.T) {
+	t.Parallel()
+
+	avatar := "/media/alice.png"
+	api := &notificationAPI{pages: map[string]notificationdomain.Page{
+		"": {Items: []notificationdomain.Item{{
+			ID:     "reply-1",
+			Kind:   notificationdomain.Reply,
+			Actors: []north.User{{Name: "Alice", Handle: "alice", AvatarURL: &avatar}},
+			Post:   &north.Post{ID: "post-1", Text: "hello"},
+		}}},
+	}}
+	screen := NewPage(api, ui.NewTheme())
+	program := reactea.New(screen, reactea.WithSize(70, 18))
+	program.Start()
+
+	actor := testkit.Find(program, "Alice")
+	if len(actor) == 0 {
+		t.Fatalf("actor was not rendered:\n%s", testkit.Plain(program))
+	}
+	command := screen.Update(program.Ctx(), tea.MouseClickMsg{X: actor[0].X, Y: actor[0].Y, Button: tea.MouseLeft})
+	if command == nil {
+		t.Fatal("clicking an actor returned no command")
+	}
+	userMessage, ok := command().(navigation.OpenUserMsg)
+	if !ok || userMessage.User.Handle != "alice" {
+		t.Fatalf("open actor = %#v", userMessage)
+	}
+
+	postText := testkit.Find(program, "hello")
+	if len(postText) == 0 {
+		t.Fatal("notification post was not rendered")
+	}
+	command = screen.Update(program.Ctx(), tea.MouseClickMsg{X: postText[0].X, Y: postText[0].Y, Button: tea.MouseLeft})
+	if command == nil {
+		t.Fatal("clicking a notification post returned no command")
+	}
+	postMessage, ok := command().(navigation.OpenPostMsg)
+	if !ok || postMessage.Post.ID != "post-1" {
+		t.Fatalf("open post = %#v", postMessage)
 	}
 }
 

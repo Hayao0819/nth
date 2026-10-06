@@ -21,8 +21,8 @@ func (d *Screen) ensureVisible(width, room int) {
 	})
 }
 
-func (d *Screen) itemAt(row, width, room int) (int, bool) {
-	return listview.ItemAt(d.top, len(d.items), row, room, func(index int) int {
+func (d *Screen) itemPositionAt(row, width, room int) (int, int, bool) {
+	return listview.ItemPositionAt(d.top, len(d.items), row, room, func(index int) int {
 		return lipgloss.Height(d.renderItem(d.items[index], width, index == d.selected))
 	})
 }

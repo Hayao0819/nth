@@ -74,9 +74,13 @@ func (d *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg) tea.Cmd {
 		return pageheader.Back()
 	}
 	row := y - d.bodyTop()
-	if index, ok := d.itemAt(row, d.innerWidth(ctx.Width()), d.room(ctx.Height())); ok {
+	width, room := d.innerWidth(ctx.Width()), d.room(ctx.Height())
+	if index, itemRow, ok := d.itemPositionAt(row, width, room); ok {
 		d.selected = index
-		d.ensureVisible(d.innerWidth(ctx.Width()), d.room(ctx.Height()))
+		d.ensureVisible(width, room)
+		if actorAt(d.items[index], x, itemRow, width) {
+			return d.openUser()
+		}
 
 		return d.open()
 	}

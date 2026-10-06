@@ -70,15 +70,7 @@ func (d *Screen) bodyTop() int {
 }
 
 func (d *Screen) renderItem(item notificationdomain.Item, width int, selected bool) string {
-	actor := "Someone"
-	if len(item.Actors) > 0 {
-		actor = ui.SafeInline(item.Actors[0].Name)
-		if actor == "" && strings.TrimSpace(item.Actors[0].Handle) != "" {
-			actor = "@" + ui.SafeInline(item.Actors[0].Handle)
-		} else if actor == "" {
-			actor = "Someone"
-		}
-	}
+	actor := primaryActorLabel(item)
 	count := max(item.ActorCount, len(item.Actors))
 	if count > 1 {
 		actor += fmt.Sprintf(" +%d", count-1)
@@ -125,6 +117,34 @@ func (d *Screen) renderItem(item notificationdomain.Item, width int, selected bo
 	lines = append(lines, d.theme.Dim.Render(strings.Repeat("─", max(0, width-2))))
 
 	return strings.Join(lines, "\n")
+}
+
+func primaryActorLabel(item notificationdomain.Item) string {
+	if len(item.Actors) == 0 {
+		return "Someone"
+	}
+	actor := ui.SafeInline(item.Actors[0].Name)
+	if actor != "" {
+		return actor
+	}
+	if handle := strings.TrimSpace(item.Actors[0].Handle); handle != "" {
+		return "@" + ui.SafeInline(handle)
+	}
+
+	return "Someone"
+}
+
+func actorAt(item notificationdomain.Item, x, row, width int) bool {
+	if row != 0 || len(item.Actors) == 0 || strings.TrimSpace(item.Actors[0].Handle) == "" {
+		return false
+	}
+	left := 3
+	if item.Actors[0].AvatarURL != nil {
+		left += termimage.AvatarColumns + 1
+	}
+	right := min(width, left+lipgloss.Width(primaryActorLabel(item)))
+
+	return x >= left && x < right
 }
 
 func notificationLabel(kind notificationdomain.Kind) string {
