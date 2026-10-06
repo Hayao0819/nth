@@ -32,17 +32,26 @@ func EnsureVisible(top, selected, count, room int, height func(int) int) int {
 }
 
 func ItemAt(top, count, row, room int, height func(int) int) (int, bool) {
+	index, _, ok := ItemPositionAt(top, count, row, room, height)
+
+	return index, ok
+}
+
+func ItemPositionAt(top, count, row, room int, height func(int) int) (index, itemRow int, ok bool) {
 	if row < 0 || row >= room {
-		return 0, false
+		return 0, 0, false
 	}
 	offset := 0
 	for index := max(0, top); index < count; index++ {
 		itemHeight := max(0, height(index))
+		if offset+itemHeight > room {
+			break
+		}
 		if row >= offset && row < offset+itemHeight {
-			return index, true
+			return index, row - offset, true
 		}
 		offset += itemHeight
 	}
 
-	return 0, false
+	return 0, 0, false
 }

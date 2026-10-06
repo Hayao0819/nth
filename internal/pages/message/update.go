@@ -2,6 +2,7 @@ package message
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
 	"github.com/Hayao0819/reactea/v2"
@@ -87,10 +88,17 @@ func (s *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg) tea.Cmd {
 	if pageheader.BackAt(x, y) {
 		return s.back()
 	}
-	if index, ok := s.itemAt(y-pageheader.Height, ctx.Width(), s.room(ctx.Height())); ok {
+	if index, row, ok := s.itemPositionAt(y-pageheader.Height, ctx.Width(), s.room(ctx.Height())); ok {
 		s.setIndex(index)
 		if s.current == nil {
 			return s.openConversation(ctx.Context())
+		}
+		if row == 0 {
+			user := s.messages[index].Sender
+			label := messageSender(s.messages[index])
+			if user.Handle != "" && x >= 3 && x < 3+lipgloss.Width(label) {
+				return navigation.OpenUser(user)
+			}
 		}
 	}
 

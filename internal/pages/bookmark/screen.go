@@ -69,7 +69,7 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		return s.action(postcomponent.Quote)
 	}
 
-	return s.feed.Update(s.feedCtx(ctx), msg)
+	return s.updateFeed(ctx, msg)
 }
 
 func (s *Screen) Render(ctx *reactea.Ctx) string {
@@ -81,7 +81,7 @@ func (s *Screen) Render(ctx *reactea.Ctx) string {
 		footer = ui.Sides(footer, progress, width)
 	}
 
-	return ui.Fit(header+body+"\n"+s.theme.Dim.Render(ui.Clip(footer, width)), width, height)
+	return ui.Fit(header+"\n"+body+"\n"+s.theme.Dim.Render(ui.Clip(footer, width)), width, height)
 }
 
 func (s *Screen) action(action postcomponent.Action) tea.Cmd {
@@ -96,6 +96,17 @@ func (s *Screen) action(action postcomponent.Action) tea.Cmd {
 
 func (s *Screen) feedCtx(ctx *reactea.Ctx) *reactea.Ctx {
 	return ctx.Inset(0, pageheader.Height, ctx.Width(), max(0, ctx.Height()-pageheader.Height-1))
+}
+
+func (s *Screen) updateFeed(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
+	feedCtx := s.feedCtx(ctx)
+	if reactea.IsMouse(msg) {
+		parentX, parentY := ctx.Origin()
+		feedX, feedY := feedCtx.Origin()
+		msg = reactea.TranslateMouse(msg, feedX-parentX, feedY-parentY)
+	}
+
+	return s.feed.Update(feedCtx, msg)
 }
 
 var _ reactea.Component = (*Screen)(nil)

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/navigation"
 	messagedomain "github.com/Hayao0819/nth/internal/domain/message"
@@ -86,6 +87,65 @@ func TestScreenOpensConversationAndPaginatesMessages(t *testing.T) {
 	command := screen.Update(program.Ctx(), testkit.Key("u"))
 	message, ok := command().(navigation.OpenUserMsg)
 	if !ok || message.User.Handle != "bob" {
+		t.Fatalf("open sender = %#v", message)
+	}
+}
+
+func TestClickingRenderedConversationOpensThatConversation(t *testing.T) {
+	t.Parallel()
+
+	conversations := []messagedomain.Conversation{
+		{
+			ID:           "conversation-1",
+			Participants: []north.User{{Name: "Alice", Handle: "alice"}},
+			LastMessage:  &messagedomain.Message{Text: "from Alice"},
+		},
+		{
+			ID:           "conversation-2",
+			Participants: []north.User{{Name: "Bob", Handle: "bob"}},
+			LastMessage:  &messagedomain.Message{Text: "from Bob"},
+		},
+	}
+	api := &messageAPI{
+		conversations: messagedomain.ConversationPage{Items: conversations},
+		messages: map[string]messagedomain.MessagePage{
+			"": {
+				Conversation: conversations[1],
+				Items: []messagedomain.Message{
+					{ID: "message-1", Text: "newer message", Sender: north.User{Name: "Carol", Handle: "carol"}},
+					{ID: "message-2", Text: "older message", Sender: north.User{Name: "Dave", Handle: "dave"}},
+				},
+			},
+		},
+	}
+	screen := New(api, ui.NewTheme())
+	program := reactea.New(screen, reactea.WithSize(70, 18))
+	program.Start()
+
+	if !testkit.ClickText(program, "Bob") {
+		t.Fatal("Bob was not rendered")
+	}
+	if screen.current == nil || screen.current.ID != "conversation-2" {
+		t.Fatalf("clicked conversation = %#v", screen.current)
+	}
+	if got := strings.Join(api.messageCalls, ","); got != "conversation-2:" {
+		t.Fatalf("message calls = %q", got)
+	}
+
+	if !testkit.ClickText(program, "older message") || screen.messageIndex != 1 {
+		t.Fatalf("clicked message index = %d", screen.messageIndex)
+	}
+	positions := testkit.Find(program, "Dave")
+	if len(positions) == 0 {
+		t.Fatal("Dave was not rendered")
+	}
+	point := positions[len(positions)-1]
+	command := screen.Update(program.Ctx(), tea.MouseClickMsg{X: point.X, Y: point.Y, Button: tea.MouseLeft})
+	if command == nil {
+		t.Fatal("clicking a message sender returned no command")
+	}
+	message, ok := command().(navigation.OpenUserMsg)
+	if !ok || message.User.Handle != "dave" {
 		t.Fatalf("open sender = %#v", message)
 	}
 }

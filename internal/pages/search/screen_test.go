@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/feed"
+	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/testkit"
@@ -53,12 +54,34 @@ func TestSearchIgnoresStaleDebounce(t *testing.T) {
 	}
 }
 
+func TestClickingRenderedSearchResultUsesItsDisplayedCoordinates(t *testing.T) {
+	t.Parallel()
+
+	api := &searchAPI{}
+	screen := New(api, ui.NewTheme(), "north")
+	program := reactea.New(screen, reactea.WithSize(72, 20))
+	program.Start()
+	positions := testkit.Find(program, "result: north")
+	if len(positions) == 0 {
+		t.Fatalf("search result was not rendered:\n%s", testkit.Plain(program))
+	}
+	point := positions[0]
+	command := screen.Update(program.Ctx(), tea.MouseClickMsg{X: point.X, Y: point.Y, Button: tea.MouseLeft})
+	if command == nil {
+		t.Fatal("clicking a search result returned no command")
+	}
+	message, ok := command().(navigation.OpenPostMsg)
+	if !ok || message.Post.ID != "result" {
+		t.Fatalf("open result = %#v", message)
+	}
+}
+
 type searchAPI struct{ queries []string }
 
 func (s *searchAPI) SearchPosts(_ context.Context, query string, _ north.SearchOptions) (north.PostPage, *north.Response, error) {
 	s.queries = append(s.queries, query)
 
-	return north.PostPage{Items: []north.Post{{ID: "result", Text: query}}}, nil, nil
+	return north.PostPage{Items: []north.Post{{ID: "result", Text: "result: " + query}}}, nil, nil
 }
 
 func (*searchAPI) HomeTimeline(context.Context, north.TimelineOptions) (north.PostPage, *north.Response, error) {

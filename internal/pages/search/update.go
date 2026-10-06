@@ -19,7 +19,7 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	}
 	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
 		if _, y, inside := reactea.Mouse(ctx, msg); inside && y >= pageheader.Height {
-			return s.feed.Update(s.feedCtx(ctx), wheel)
+			return s.updateFeed(ctx, wheel)
 		}
 
 		return nil
@@ -81,7 +81,18 @@ func (s *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg) tea.Cmd {
 		return s.input.Widget.Focus()
 	}
 
-	return s.feed.Update(s.feedCtx(ctx), msg)
+	return s.updateFeed(ctx, msg)
+}
+
+func (s *Screen) updateFeed(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
+	feedCtx := s.feedCtx(ctx)
+	if reactea.IsMouse(msg) {
+		parentX, parentY := ctx.Origin()
+		feedX, feedY := feedCtx.Origin()
+		msg = reactea.TranslateMouse(msg, feedX-parentX, feedY-parentY)
+	}
+
+	return s.feed.Update(feedCtx, msg)
 }
 
 func (s *Screen) updateInput(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {

@@ -39,7 +39,7 @@ func (s *Screen) Render(ctx *reactea.Ctx) string {
 		footer += " · L more"
 	}
 
-	return ui.Fit(header+body+"\n"+s.theme.Dim.Render(ui.Clip(footer, width)), width, height)
+	return ui.Fit(header+"\n"+body+"\n"+s.theme.Dim.Render(ui.Clip(footer, width)), width, height)
 }
 
 func (s *Screen) renderItems(width, room int) string {
@@ -114,10 +114,7 @@ func (s *Screen) renderMessage(message messagedomain.Message, width int, selecte
 	if selected {
 		marker = s.theme.Active.Render("●")
 	}
-	sender := ui.SafeInline(message.Sender.Name)
-	if sender == "" {
-		sender = "@" + ui.SafeInline(message.Sender.Handle)
-	}
+	sender := messageSender(message)
 	first := ui.Sides(marker+"  "+s.theme.Name.Render(sender), s.theme.Dim.Render(timeLabel(message.CreatedAt)), width)
 	text := strings.TrimSpace(message.Text)
 	if text == "" && len(message.Media) > 0 {
@@ -131,6 +128,15 @@ func (s *Screen) renderMessage(message messagedomain.Message, width int, selecte
 	lines = append(lines, s.theme.Dim.Render(strings.Repeat("─", max(0, width-2))))
 
 	return strings.Join(lines, "\n")
+}
+
+func messageSender(message messagedomain.Message) string {
+	sender := ui.SafeInline(message.Sender.Name)
+	if sender == "" {
+		sender = "@" + ui.SafeInline(message.Sender.Handle)
+	}
+
+	return sender
 }
 
 func conversationTitle(conversation messagedomain.Conversation) string {

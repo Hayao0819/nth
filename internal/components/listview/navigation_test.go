@@ -29,6 +29,12 @@ func TestItemAtUsesRenderedRows(t *testing.T) {
 	if _, ok := ItemAt(1, len(heights), 5, 5, height); ok {
 		t.Fatal("ItemAt accepted a row outside the viewport")
 	}
+	if _, ok := ItemAt(0, len(heights), 4, 4, height); ok {
+		t.Fatal("ItemAt accepted a row occupied by an item that did not fit")
+	}
+	if index, row, ok := ItemPositionAt(1, len(heights), 4, 5, height); !ok || index != 2 || row != 1 {
+		t.Fatalf("ItemPositionAt() = %d, %d, %v; want 2, 1, true", index, row, ok)
+	}
 }
 
 func TestMoveClampsSelection(t *testing.T) {
