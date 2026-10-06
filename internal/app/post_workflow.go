@@ -104,7 +104,7 @@ func (r *root) handlePostAction(ctx *reactea.Ctx, action postcomponent.Action, p
 			return nil
 		}
 		if _, ok := r.api.(postpage.Editor); !ok {
-			r.notice = "Editing requires browser authentication"
+			r.notice = "Editing is not available with the current authentication"
 
 			return nil
 		}
@@ -129,7 +129,7 @@ func (r *root) editPost(ctx context.Context, id, text string, mediaIDs []string)
 	}
 	editor, ok := r.api.(postpage.Editor)
 	if !ok {
-		r.notice = "Editing requires browser authentication"
+		r.notice = "Editing is not available with the current authentication"
 
 		return nil
 	}

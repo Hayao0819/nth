@@ -68,7 +68,7 @@ func (d *Screen) appendReplyContent(lines []string, users []userHit, posts []pos
 	case d.conversation == nil:
 		message := "No replies yet"
 		if target := d.post.DisplayPost(); target != nil && target.ReplyCount > 0 {
-			message = "Browser authentication is required to load replies"
+			message = "Replies are not available with the current authentication"
 		}
 		lines = append(lines, d.theme.Dim.Render(message))
 	case d.loadingConversation && len(d.replies) == 0:

@@ -133,7 +133,7 @@ func helpLines(theme ui.Theme, width int, notifications, messages, bookmarks boo
 			{"Q", "Quote the selected post"},
 			{"l / f", "Like or unlike the selected post"},
 			{"t", "Repost or undo the selected post"},
-			{"e", "Edit an eligible post you own (browser authentication)"},
+			{"e", "Edit an eligible post you own"},
 			{"d", "Delete your own post from its details"},
 			{"Ctrl+S", "Send; Ctrl+Enter where supported"},
 			{"Enter / y", "Confirm deletion"},

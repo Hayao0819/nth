@@ -139,9 +139,9 @@ func FriendlyError(err error) string {
 	if errors.As(err, &apiError) {
 		switch {
 		case apiError.HasCode(32):
-			return "Authentication failed — check the API token or run nth setup"
+			return "Authentication failed — run nth setup"
 		case apiError.HasCode(87):
-			return "The API token does not have permission for this action"
+			return "The current credential does not have permission for this action"
 		case apiError.HasCode(88):
 			if apiError.Response != nil && !apiError.Response.RateLimit.Reset.IsZero() {
 				return "Rate limited until " + apiError.Response.RateLimit.Reset.Local().Format("15:04:05")
