@@ -8,7 +8,7 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
-	postpage "github.com/Hayao0819/nth/internal/pages/post"
+	postfeature "github.com/Hayao0819/nth/internal/features/post"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -21,8 +21,15 @@ func (r *root) compose(ctx *reactea.Ctx, replyTo, quote *north.Post) tea.Cmd {
 	}
 
 	key := composeDraftKey(postID(replyTo), postID(quote))
+	draft := r.drafts[key]
+	composer := dialog.NewCompose(r.theme, replyTo, quote, draft.Text).
+		SetMediaAPI(r.media).
+		SetThreadEnabled(r.threads != nil).
+		RestoreMediaIDs(draft.MediaIDs).
+		RestorePoll(draft.Poll).
+		RestoreThread(draft.ThreadItems)
 
-	return modal.PushAt(ctx, dialog.NewCompose(r.theme, replyTo, quote, r.drafts[key]), dialog.Placement(ctx, 72, 16))
+	return modal.PushAt(ctx, composer, dialog.Placement(ctx, 72, 16))
 }
 
 func (r *root) edit(ctx *reactea.Ctx, post north.Post) tea.Cmd {
@@ -38,11 +45,13 @@ func (r *root) edit(ctx *reactea.Ctx, post north.Post) tea.Cmd {
 		return nil
 	}
 
-	return modal.PushAt(
-		ctx,
-		dialog.NewEdit(r.theme, *target, r.drafts["edit:"+target.ID]),
-		dialog.Placement(ctx, 72, 16),
-	)
+	key := "edit:" + target.ID
+	draft := r.drafts[key]
+	composer := dialog.NewEdit(r.theme, *target, draft.Text).
+		SetMediaAPI(r.media).
+		RestoreMediaIDs(draft.MediaIDs)
+
+	return modal.PushAt(ctx, composer, dialog.Placement(ctx, 72, 16))
 }
 
 func (r *root) submit(ctx context.Context, post dialog.Submission) tea.Cmd {
@@ -56,7 +65,25 @@ func (r *root) submit(ctx context.Context, post dialog.Submission) tea.Cmd {
 	r.failureJob = ""
 	draftKey := composeDraftKey(post.ReplyTo, post.QuoteID)
 
-	req := north.CreatePostRequest{Text: post.Text, QuotePostID: post.QuoteID}
+	if len(post.ThreadItems) > 0 {
+		if r.threads == nil {
+			r.posting = false
+			r.notice = "Thread creation is not available with the current authentication"
+
+			return nil
+		}
+
+		return func() tea.Msg {
+			_, resp, err := r.threads.CreateThread(ctx, post.ThreadItems)
+
+			return postCreatedMsg{target: r, draftKey: draftKey, resp: resp, err: err}
+		}
+	}
+
+	req := north.CreatePostRequest{Text: post.Text, QuotePostID: post.QuoteID, Poll: clonePoll(post.Poll)}
+	if len(post.MediaIDs) > 0 {
+		req.Media = &north.CreatePostMedia{MediaIDs: append([]string(nil), post.MediaIDs...)}
+	}
 	if post.ReplyTo != "" {
 		req.Reply = &north.CreatePostReply{InReplyToPostID: post.ReplyTo}
 	}
@@ -97,13 +124,15 @@ func (r *root) handlePostAction(ctx *reactea.Ctx, action postcomponent.Action, p
 		return r.feed.ToggleLikePost(ctx.Context(), &post)
 	case postcomponent.Quote:
 		return r.compose(ctx, nil, target)
+	case postcomponent.Bookmark:
+		return r.toggleBookmark(ctx.Context(), target)
 	case postcomponent.Edit:
 		if !r.ownsPost(post) {
 			r.notice = "Only your own posts can be edited"
 
 			return nil
 		}
-		if _, ok := r.api.(postpage.Editor); !ok {
+		if _, ok := r.api.(postfeature.Editor); !ok {
 			r.notice = "Editing is not available with the current authentication"
 
 			return nil
@@ -123,11 +152,39 @@ func (r *root) handlePostAction(ctx *reactea.Ctx, action postcomponent.Action, p
 	}
 }
 
+func (r *root) toggleBookmark(ctx context.Context, post *north.Post) tea.Cmd {
+	if r.bookmarks == nil || post == nil || strings.TrimSpace(post.ID) == "" {
+		r.notice = "Bookmarks are not available with the current authentication"
+
+		return nil
+	}
+	if _, busy := r.bookmarking[post.ID]; busy {
+		return nil
+	}
+	r.bookmarking[post.ID] = struct{}{}
+	r.notice = "Updating bookmark…"
+	r.problem = nil
+	id := post.ID
+	bookmarked := !post.Bookmarked
+
+	return func() tea.Msg {
+		var response *north.Response
+		var err error
+		if bookmarked {
+			_, response, err = r.bookmarks.Bookmark(ctx, id)
+		} else {
+			_, response, err = r.bookmarks.Unbookmark(ctx, id)
+		}
+
+		return bookmarkChangedMsg{target: r, postID: id, bookmarked: bookmarked, response: response, err: err}
+	}
+}
+
 func (r *root) editPost(ctx context.Context, id, text string, mediaIDs []string) tea.Cmd {
 	if r.editing {
 		return nil
 	}
-	editor, ok := r.api.(postpage.Editor)
+	editor, ok := r.api.(postfeature.Editor)
 	if !ok {
 		r.notice = "Editing is not available with the current authentication"
 
@@ -180,13 +237,38 @@ func (r *root) ownsPost(post north.Post) bool {
 	return strings.EqualFold(r.me.Handle, target.Author.Handle)
 }
 
-func (r *root) rememberDraft(key, text string) {
-	if strings.TrimSpace(text) == "" {
+func (r *root) rememberDraft(key string, draft dialog.Submission) {
+	if strings.TrimSpace(draft.Text) == "" && len(draft.MediaIDs) == 0 && draft.Poll == nil && len(draft.ThreadItems) == 0 {
 		delete(r.drafts, key)
 
 		return
 	}
-	r.drafts[key] = text
+	draft.MediaIDs = append([]string(nil), draft.MediaIDs...)
+	draft.Poll = clonePoll(draft.Poll)
+	draft.ThreadItems = cloneThreadItems(draft.ThreadItems)
+	r.drafts[key] = draft
+}
+
+func clonePoll(poll *north.CreatePoll) *north.CreatePoll {
+	if poll == nil {
+		return nil
+	}
+
+	return &north.CreatePoll{Options: append([]string(nil), poll.Options...), DurationMinutes: poll.DurationMinutes}
+}
+
+func cloneThreadItems(items []north.ThreadItem) []north.ThreadItem {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]north.ThreadItem, len(items))
+	for index, item := range items {
+		cloned[index] = item
+		cloned[index].MediaIDs = append([]string(nil), item.MediaIDs...)
+		cloned[index].Poll = clonePoll(item.Poll)
+	}
+
+	return cloned
 }
 
 func composeDraftKey(replyTo, quoteID string) string {

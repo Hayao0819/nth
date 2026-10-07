@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/Hayao0819/nth/internal/domain/session"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
@@ -21,18 +21,18 @@ type Screen struct {
 	reactea.BasicComponent
 
 	theme      ui.Theme
-	request    *session.RefreshRequest
+	request    *domain.RefreshRequest
 	refreshing bool
 	problem    string
 }
 
-func New(theme ui.Theme, request *session.RefreshRequest) *Screen {
+func New(theme ui.Theme, request *domain.RefreshRequest) *Screen {
 	return &Screen{theme: theme, request: request}
 }
 
 func (s *Screen) Init(ctx *reactea.Ctx) tea.Cmd {
 	ctx.OnDestroy(func() {
-		s.request.Complete(session.ErrRefreshCanceled)
+		s.request.Complete(domain.ErrRefreshCanceled)
 	})
 
 	return nil
@@ -63,7 +63,7 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 					return s.retry(ctx)
 				}
 				if ui.TextAt(line, x, "q quit") {
-					s.request.Complete(session.ErrRefreshCanceled)
+					s.request.Complete(domain.ErrRefreshCanceled)
 
 					return tea.Quit
 				}
@@ -75,7 +75,7 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	case reactea.Key(msg, "enter", "."):
 		return s.retry(ctx)
 	case reactea.Key(msg, "q"):
-		s.request.Complete(session.ErrRefreshCanceled)
+		s.request.Complete(domain.ErrRefreshCanceled)
 
 		return tea.Quit
 	}

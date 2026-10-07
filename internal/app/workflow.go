@@ -6,8 +6,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/feed"
+	"github.com/Hayao0819/nth/internal/components/navigation"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
-	searchpage "github.com/Hayao0819/nth/internal/pages/search"
+	searchfeature "github.com/Hayao0819/nth/internal/features/search"
 	"github.com/Hayao0819/reactea/v2"
 )
 
@@ -35,13 +36,68 @@ func (r *root) openBookmarks(ctx *reactea.Ctx) tea.Cmd {
 	return r.pushRoute(ctx, bookmarksRoute)
 }
 
+func (r *root) openBookmarkFolders(ctx *reactea.Ctx) tea.Cmd {
+	if r.bookmarkFolders == nil {
+		return nil
+	}
+
+	return r.pushRoute(ctx, bookmarkFoldersRoute)
+}
+
+func (r *root) openBookmarkFolder(ctx *reactea.Ctx, folder north.BookmarkFolder) tea.Cmd {
+	if r.bookmarkFolders == nil || strings.TrimSpace(folder.ID) == "" {
+		return nil
+	}
+	r.bookmarkItems[folder.ID] = folder
+
+	return r.pushRoute(ctx, bookmarkFolderRoute(folder.ID))
+}
+
+func (r *root) openSavedPosts(ctx *reactea.Ctx) tea.Cmd {
+	if r.savedPosts == nil {
+		return nil
+	}
+
+	return r.pushRoute(ctx, savedRoute)
+}
+
+func (r *root) openAccountSafety(ctx *reactea.Ctx) tea.Cmd {
+	if r.accountSafety == nil {
+		return nil
+	}
+
+	return r.pushRoute(ctx, accountSafetyRoute)
+}
+
 func (r *root) openLists(ctx *reactea.Ctx) tea.Cmd {
+	if r.lists == nil {
+		return nil
+	}
+
 	return r.pushRoute(ctx, listsRoute)
+}
+
+func (r *root) openList(ctx *reactea.Ctx, item north.List) tea.Cmd {
+	if r.lists == nil || strings.TrimSpace(item.ID) == "" {
+		return nil
+	}
+	r.listItems[item.ID] = item
+
+	return r.pushRoute(ctx, listRoute(item.ID))
+}
+
+func (r *root) openListMembers(ctx *reactea.Ctx, item north.List) tea.Cmd {
+	if r.listMembers == nil || strings.TrimSpace(item.ID) == "" {
+		return nil
+	}
+	r.listItems[item.ID] = item
+
+	return r.pushRoute(ctx, listMembersRoute(item.ID))
 }
 
 func (r *root) search(ctx *reactea.Ctx) tea.Cmd {
 	current := ""
-	if page, ok := r.currentPage().(*searchpage.Screen); ok {
+	if page, ok := r.currentPage().(*searchfeature.Screen); ok {
 		current = page.Query()
 	} else if r.feed.CurrentMode() == feed.Search {
 		current = r.feed.SearchQuery()
@@ -101,6 +157,22 @@ func (r *root) openPost(ctx *reactea.Ctx, post north.Post) tea.Cmd {
 	return r.pushRoute(ctx, postRoute(key))
 }
 
+func (r *root) openPostActivity(ctx *reactea.Ctx, post north.Post, activity navigation.PostActivity) tea.Cmd {
+	if r.postActivity == nil {
+		return nil
+	}
+	id := post.ID
+	if target := post.DisplayPost(); target != nil && strings.TrimSpace(target.ID) != "" {
+		id = target.ID
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	r.posts[id] = post
+
+	return r.pushRoute(ctx, postActivityRoute(id, activity))
+}
+
 func (r *root) openUser(ctx *reactea.Ctx, user north.User) tea.Cmd {
 	handle := strings.TrimSpace(user.Handle)
 	if handle == "" {
@@ -112,6 +184,16 @@ func (r *root) openUser(ctx *reactea.Ctx, user north.User) tea.Cmd {
 	r.users[strings.ToLower(handle)] = user
 
 	return r.pushRoute(ctx, userRoute(handle))
+}
+
+func (r *root) openUserConnections(ctx *reactea.Ctx, user north.User, following bool) tea.Cmd {
+	handle := strings.TrimSpace(user.Handle)
+	if r.connections == nil || handle == "" {
+		return nil
+	}
+	r.users[strings.ToLower(handle)] = user
+
+	return r.pushRoute(ctx, userConnectionsRoute(handle, following))
 }
 
 func (r *root) openNextLinkedUser(ctx *reactea.Ctx, post north.Post) tea.Cmd {

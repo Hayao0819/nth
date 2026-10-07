@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Hayao0819/nth/internal/domain/session"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
@@ -17,7 +17,7 @@ func TestScreenRetriesUntilBrowserSessionIsAvailable(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
-	request := session.NewRefreshRequest("Firefox · default", func(context.Context) error {
+	request := domain.NewRefreshRequest("Firefox · default", func(context.Context) error {
 		calls++
 		if calls == 1 {
 			return errors.New("cookies are still expired")

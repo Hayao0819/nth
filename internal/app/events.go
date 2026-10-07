@@ -1,31 +1,33 @@
 package app
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
 	"github.com/Hayao0819/nth/internal/components/sessiondialog"
-	"github.com/Hayao0819/nth/internal/domain/session"
-	notificationpage "github.com/Hayao0819/nth/internal/pages/notification"
+	"github.com/Hayao0819/nth/internal/domain"
+	notificationfeature "github.com/Hayao0819/nth/internal/features/notification"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
 
 func (r *root) handleEvent(ctx *reactea.Ctx, event tea.Msg) (tea.Cmd, bool) {
 	switch msg := event.(type) {
-	case *session.RefreshRequest:
+	case *domain.RefreshRequest:
 		if msg == nil {
 			return nil, true
 		}
 
 		return modal.Push(ctx, sessiondialog.New(r.theme, msg)), true
 
-	case notificationpage.PageLoadedMsg:
+	case notificationfeature.PageLoadedMsg:
 		return r.Wrapper.Update(ctx, msg), true
 
-	case notificationpage.ReadMsg:
+	case notificationfeature.ReadMsg:
 		if msg.Error() == nil {
 			r.unread = 0
 			r.unreadErr = nil
@@ -43,12 +45,70 @@ func (r *root) handleEvent(ctx *reactea.Ctx, event tea.Msg) (tea.Cmd, bool) {
 
 		return r.openPost(ctx, msg.Post), true
 
+	case navigation.OpenPostActivityMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openPostActivity(ctx, msg.Post, msg.Activity), true
+
 	case navigation.OpenUserMsg:
 		if r.timelineInputCaptured(ctx) {
 			return nil, true
 		}
 
 		return r.openUser(ctx, msg.User), true
+
+	case navigation.OpenUserConnectionsMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openUserConnections(ctx, msg.User, msg.Following), true
+
+	case navigation.OpenListMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openList(ctx, msg.List), true
+
+	case navigation.OpenListMembersMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openListMembers(ctx, msg.List), true
+
+	case navigation.OpenBookmarkFoldersMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openBookmarkFolders(ctx), true
+
+	case navigation.OpenBookmarkFolderMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.openBookmarkFolder(ctx, msg.Folder), true
+
+	case navigation.OpenSavedPostsMsg:
+		return r.openSavedPosts(ctx), true
+
+	case navigation.OpenAccountSafetyMsg:
+		return r.openAccountSafety(ctx), true
+
+	case navigation.ProfileUpdatedMsg:
+		user := msg.User
+		r.me = &user
+		r.users[strings.ToLower(user.Handle)] = user
+
+		return r.Wrapper.Update(ctx, msg), true
+
+	case navigation.MessagesReadMsg:
+		return r.loadDMUnread(ctx), true
 
 	case postcomponent.ActionMsg:
 		if r.timelineInputCaptured(ctx) {
@@ -65,6 +125,9 @@ func (r *root) handleEvent(ctx *reactea.Ctx, event tea.Msg) (tea.Cmd, bool) {
 
 	case postEditedMsg:
 		return r.handlePostEdited(ctx, msg), true
+
+	case bookmarkChangedMsg:
+		return r.handleBookmarkChanged(ctx, msg), true
 
 	case modal.Result[dialog.Submission]:
 		return r.handleSubmission(ctx, msg), true

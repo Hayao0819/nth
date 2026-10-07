@@ -8,10 +8,12 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/dialog"
 	"github.com/Hayao0819/nth/internal/components/feed"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
-	"github.com/Hayao0819/nth/internal/domain/notification"
-	searchpage "github.com/Hayao0819/nth/internal/pages/search"
+	"github.com/Hayao0819/nth/internal/domain"
+	searchfeature "github.com/Hayao0819/nth/internal/features/search"
+	"github.com/Hayao0819/nth/internal/services/northapi"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 	"github.com/Hayao0819/reactea/v2/testkit"
@@ -39,7 +41,7 @@ func TestRootNavigationSearchAndCompose(t *testing.T) {
 	}
 
 	testkit.SendKeys(program, "/", "g", "o")
-	search, ok := root.currentPage().(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchfeature.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "go" {
 		t.Fatalf("search page = %v component = %T", root.page.kind, root.currentPage())
 	}
@@ -110,6 +112,22 @@ func TestOpeningHomeKeepsTheLoadedTimeline(t *testing.T) {
 	}
 }
 
+func TestLegacyTokenHidesUnavailableNavigation(t *testing.T) {
+	t.Parallel()
+
+	official, err := north.NewClient("nth_live_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := newRoot(northapi.NewHybrid(official, nil, "", nil))
+	if root.notifications == nil {
+		t.Fatal("legacy notifications were hidden")
+	}
+	if root.bookmarks != nil || root.messages != nil || root.lists != nil {
+		t.Fatalf("legacy services: bookmarks=%T messages=%T lists=%T", root.bookmarks, root.messages, root.lists)
+	}
+}
+
 func TestReplyAndQuoteUseDisplayedPost(t *testing.T) {
 	t.Parallel()
 
@@ -130,6 +148,106 @@ func TestReplyAndQuoteUseDisplayedPost(t *testing.T) {
 	testkit.SendKeys(program, "Q", "y", "e", "s", "ctrl+s")
 	if len(service.created) != 2 || service.created[1].QuotePostID != "1" {
 		t.Fatalf("quote = %#v", service.created)
+	}
+}
+
+func TestSubmitPreservesMedia(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeAPI{}
+	root := newRoot(service)
+	command := root.submit(context.Background(), dialog.Submission{
+		Text:     "photo",
+		MediaIDs: []string{"media-1", "media-2"},
+		Poll:     &north.CreatePoll{Options: []string{"yes", "no"}, DurationMinutes: 60},
+	})
+	if command == nil {
+		t.Fatal("submit returned no command")
+	}
+	command()
+	if len(service.created) != 1 || service.created[0].Media == nil {
+		t.Fatalf("created = %#v", service.created)
+	}
+	if got := service.created[0].Media.MediaIDs; len(got) != 2 || got[0] != "media-1" || got[1] != "media-2" {
+		t.Fatalf("media IDs = %#v", got)
+	}
+	if service.created[0].Poll == nil || service.created[0].Poll.DurationMinutes != 60 {
+		t.Fatalf("poll = %#v", service.created[0].Poll)
+	}
+}
+
+type threadRootAPI struct {
+	*fakeAPI
+	items []north.ThreadItem
+}
+
+func (a *threadRootAPI) CreateThread(_ context.Context, items []north.ThreadItem) ([]north.Post, *north.Response, error) {
+	a.items = append([]north.ThreadItem(nil), items...)
+
+	return []north.Post{{ID: "thread-post"}}, a.response(), nil
+}
+
+func TestSubmitUsesThreadEndpoint(t *testing.T) {
+	t.Parallel()
+
+	service := &threadRootAPI{fakeAPI: &fakeAPI{}}
+	root := newRoot(service)
+	command := root.submit(context.Background(), dialog.Submission{
+		ThreadItems: []north.ThreadItem{{Text: "first"}, {Text: "second"}},
+	})
+	if command == nil {
+		t.Fatal("submit returned no command")
+	}
+	message, ok := command().(postCreatedMsg)
+	if !ok || message.err != nil {
+		t.Fatalf("message = %#v", message)
+	}
+	if len(service.items) != 2 || service.items[1].Text != "second" || len(service.created) != 0 {
+		t.Fatalf("thread items = %#v, ordinary posts = %#v", service.items, service.created)
+	}
+}
+
+type bookmarkRootAPI struct {
+	*fakeAPI
+	bookmarked   []string
+	unbookmarked []string
+}
+
+func (a *bookmarkRootAPI) Bookmarks(context.Context, string) (north.PostPage, *north.Response, error) {
+	return north.PostPage{}, a.response(), nil
+}
+
+func (a *bookmarkRootAPI) Bookmark(_ context.Context, id string) (north.BookmarkState, *north.Response, error) {
+	a.bookmarked = append(a.bookmarked, id)
+
+	return north.BookmarkState{Bookmarked: true, OK: true}, a.response(), nil
+}
+
+func (a *bookmarkRootAPI) Unbookmark(_ context.Context, id string) (bool, *north.Response, error) {
+	a.unbookmarked = append(a.unbookmarked, id)
+
+	return true, a.response(), nil
+}
+
+func TestBookmarkActionUpdatesTheVisiblePost(t *testing.T) {
+	t.Parallel()
+
+	service := &bookmarkRootAPI{fakeAPI: &fakeAPI{}}
+	root := newRoot(service)
+	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
+	program.Start()
+	testkit.SendKeys(program, "b")
+
+	post := root.feed.SelectedPost()
+	if len(service.bookmarked) != 1 || service.bookmarked[0] != "1" || post == nil || !post.DisplayPost().Bookmarked {
+		t.Fatalf("bookmarked = %#v, post = %#v", service.bookmarked, post)
+	}
+	if !strings.Contains(testkit.Plain(program), "Bookmark") {
+		t.Fatalf("bookmark state is not visible:\n%s", testkit.Plain(program))
+	}
+	testkit.SendKeys(program, "b")
+	if len(service.unbookmarked) != 1 || service.unbookmarked[0] != "1" || post.DisplayPost().Bookmarked {
+		t.Fatalf("unbookmarked = %#v, post = %#v", service.unbookmarked, post)
 	}
 }
 
@@ -289,7 +407,7 @@ func TestWideLayout(t *testing.T) {
 	}
 	testkit.Click(program, asideLeft+4, 2)
 	testkit.SendKeys(program, "n", "o", "r", "t", "h")
-	search, ok := root.currentPage().(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchfeature.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "north" {
 		t.Fatalf("aside search page = %v component = %T", root.page.kind, root.currentPage())
 	}
@@ -320,7 +438,7 @@ func TestWideLayoutTrendsOpenSearch(t *testing.T) {
 		t.Fatalf("trend hits = %#v", layout.trends)
 	}
 	testkit.Click(program, asideLeft+4, layout.trends[0].first)
-	search, ok := root.currentPage().(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchfeature.Screen)
 	if !ok {
 		t.Fatalf("trend search = %T", root.currentPage())
 	}
@@ -328,7 +446,7 @@ func TestWideLayoutTrendsOpenSearch(t *testing.T) {
 		t.Fatalf("trend query = %q", search.Query())
 	}
 	testkit.SendKeys(program, "esc", "7")
-	search, ok = root.currentPage().(*searchpage.Screen)
+	search, ok = root.currentPage().(*searchfeature.Screen)
 	if !ok {
 		t.Fatalf("keyboard trend search = %T", root.currentPage())
 	}
@@ -381,7 +499,7 @@ func TestComposeKeepsDraftUntilSuccessfulPost(t *testing.T) {
 	program.Start()
 
 	testkit.SendKeys(program, "n", "d", "r", "a", "f", "t", "esc")
-	if root.drafts["post"] != "draft" || !strings.Contains(testkit.Plain(program), "Draft saved") {
+	if root.drafts["post"].Text != "draft" || !strings.Contains(testkit.Plain(program), "Draft saved") {
 		t.Fatalf("draft after close = %#v\n%s", root.drafts, testkit.Plain(program))
 	}
 	testkit.SendKeys(program, "n")
@@ -389,7 +507,7 @@ func TestComposeKeepsDraftUntilSuccessfulPost(t *testing.T) {
 		t.Fatalf("saved draft was not restored:\n%s", plain)
 	}
 	testkit.SendKeys(program, "ctrl+j")
-	if root.drafts["post"] != "draft" || !strings.Contains(testkit.Plain(program), "Post failed · draft kept") {
+	if root.drafts["post"].Text != "draft" || !strings.Contains(testkit.Plain(program), "Post failed · draft kept") {
 		t.Fatalf("failed post lost draft: %#v\n%s", root.drafts, testkit.Plain(program))
 	}
 
@@ -413,7 +531,7 @@ func TestComposeDraftsAreScopedToTheirTarget(t *testing.T) {
 	testkit.SendKeys(program, "r", "r", "e", "p", "l", "y", "esc")
 	testkit.SendKeys(program, "Q", "q", "u", "o", "t", "e", "esc")
 	for key, want := range map[string]string{"post": "new", "reply:1": "reply", "quote:1": "quote"} {
-		if got := root.drafts[key]; got != want {
+		if got := root.drafts[key].Text; got != want {
 			t.Errorf("draft %q = %q, want %q", key, got, want)
 		}
 	}
@@ -434,7 +552,7 @@ func TestComposeAndSearchButtons(t *testing.T) {
 	}
 
 	testkit.SendKeys(program, "/", "n", "o", "r", "t", "h")
-	search, ok := root.currentPage().(*searchpage.Screen)
+	search, ok := root.currentPage().(*searchfeature.Screen)
 	if root.page.kind != searchPage || !ok || search.Query() != "north" {
 		t.Fatalf("search page = %v component = %T", root.page.kind, root.currentPage())
 	}
@@ -720,9 +838,9 @@ func TestNotificationsOpenAndMarkTheFeedRead(t *testing.T) {
 	service := &notificationAppAPI{
 		fakeAPI: &fakeAPI{},
 		unread:  3,
-		page: notification.Page{Items: []notification.Item{{
+		page: domain.NotificationPage{Items: []domain.NotificationItem{{
 			ID:         "like-1",
-			Kind:       notification.Like,
+			Kind:       domain.NotificationLike,
 			Actors:     []north.User{{Name: "Bob", Handle: "bob"}},
 			ActorCount: 1,
 			Post:       postPointer(testPost("notice", "from a notification")),
@@ -892,12 +1010,12 @@ func clickLastText(t *testing.T, program *reactea.App, label string) {
 
 type notificationAppAPI struct {
 	*fakeAPI
-	page       notification.Page
+	page       domain.NotificationPage
 	unread     int
 	markedRead int
 }
 
-func (a *notificationAppAPI) Notifications(context.Context, north.NotificationTab, string) (notification.Page, *north.Response, error) {
+func (a *notificationAppAPI) Notifications(context.Context, north.NotificationTab, string) (domain.NotificationPage, *north.Response, error) {
 	return a.page, a.response(), nil
 }
 

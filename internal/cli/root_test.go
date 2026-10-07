@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	"github.com/Hayao0819/nth/internal/app"
-	"github.com/Hayao0819/nth/internal/domain/bookmark"
-	"github.com/Hayao0819/nth/internal/domain/message"
-	"github.com/Hayao0819/nth/internal/domain/notification"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"golang.org/x/oauth2"
 )
@@ -159,13 +157,13 @@ func TestAPITokenDoesNotReadBrowserCookies(t *testing.T) {
 		start: func(_ context.Context, api app.API, options app.Options) error {
 			started = true
 			images = options.Images
-			if _, ok := api.(notification.API); !ok {
+			if _, ok := api.(domain.NotificationAPI); !ok {
 				t.Fatal("API token client does not expose notifications")
 			}
-			if _, ok := api.(bookmark.API); !ok {
+			if _, ok := api.(domain.BookmarkAPI); !ok {
 				t.Fatal("API token client does not expose bookmarks")
 			}
-			if _, ok := api.(message.API); !ok {
+			if _, ok := api.(domain.MessageAPI); !ok {
 				t.Fatal("API token client does not expose messages")
 			}
 
@@ -191,6 +189,7 @@ func TestOAuthStartsTheOfficialClient(t *testing.T) {
 		OAuth: auth.OAuthCredential{
 			ClientID: "client-id",
 			Token:    oauth2.Token{AccessToken: "access-token", RefreshToken: "refresh-token"},
+			Scopes:   auth.RequiredOAuthScopes(),
 		},
 	}}
 	started := false
@@ -203,13 +202,13 @@ func TestOAuthStartsTheOfficialClient(t *testing.T) {
 		},
 		start: func(_ context.Context, api app.API, _ app.Options) error {
 			started = true
-			if _, ok := api.(notification.API); !ok {
+			if _, ok := api.(domain.NotificationAPI); !ok {
 				t.Fatal("OAuth client does not expose notifications")
 			}
-			if _, ok := api.(bookmark.API); !ok {
+			if _, ok := api.(domain.BookmarkAPI); !ok {
 				t.Fatal("OAuth client does not expose bookmarks")
 			}
-			if _, ok := api.(message.API); !ok {
+			if _, ok := api.(domain.MessageAPI); !ok {
 				t.Fatal("OAuth client does not expose messages")
 			}
 
@@ -223,6 +222,51 @@ func TestOAuthStartsTheOfficialClient(t *testing.T) {
 	}
 	if !started || credentials.refreshes != 0 {
 		t.Fatalf("started = %v, browser refreshes = %d", started, credentials.refreshes)
+	}
+}
+
+func TestOAuthScopeUpdateRunsAuthorizationSetup(t *testing.T) {
+	t.Parallel()
+
+	required := auth.RequiredOAuthScopes()
+	credentials := &fakeCredentials{settings: auth.Settings{
+		Method: auth.MethodOAuth,
+		OAuth: auth.OAuthCredential{
+			ClientID: "client-id",
+			Token:    oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"},
+			Scopes:   append([]string(nil), required[:len(required)-1]...),
+		},
+	}}
+	setupCalled := false
+	started := false
+	deps := dependencies{
+		credentials: credentials,
+		setup: func(_ context.Context, initial auth.Settings, _ []auth.Profile, _ auth.OAuthStartFunc, save func(auth.Settings) error) (bool, error) {
+			setupCalled = true
+			if !initial.OAuthNeedsAuthorization() {
+				t.Fatalf("setup did not receive outdated OAuth: %#v", initial.OAuth)
+			}
+			initial.OAuth = auth.OAuthCredential{
+				ClientID: "client-id",
+				Token:    oauth2.Token{AccessToken: "new-access", RefreshToken: "new-refresh"},
+				Scopes:   required,
+			}
+
+			return true, save(initial)
+		},
+		start: func(context.Context, app.API, app.Options) error {
+			started = true
+
+			return nil
+		},
+	}
+	command := newCommandWith("test", deps)
+	command.SetArgs(nil)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !setupCalled || !started || credentials.settings.OAuthNeedsAuthorization() {
+		t.Fatalf("setup=%t started=%t OAuth=%#v", setupCalled, started, credentials.settings.OAuth)
 	}
 }
 
@@ -247,7 +291,7 @@ func TestAPITokenAndBrowserSessionAreCombined(t *testing.T) {
 		},
 		start: func(_ context.Context, api app.API, _ app.Options) error {
 			started = true
-			if _, ok := api.(notification.API); !ok {
+			if _, ok := api.(domain.NotificationAPI); !ok {
 				t.Fatal("combined client does not expose notifications")
 			}
 
@@ -279,7 +323,7 @@ func TestMissingBrowserSessionStartsRefreshableClient(t *testing.T) {
 			return false, nil
 		},
 		start: func(_ context.Context, api app.API, options app.Options) error {
-			if _, ok := api.(notification.API); !ok {
+			if _, ok := api.(domain.NotificationAPI); !ok {
 				t.Fatal("browser features disappeared while waiting for a new session")
 			}
 			if !strings.Contains(options.StartupNotice, "needs to be refreshed") {
@@ -334,7 +378,11 @@ func (f *fakeCredentials) SaveOAuthToken(clientID string, token *oauth2.Token) e
 	if token == nil {
 		return errors.New("OAuth token is nil")
 	}
-	f.settings.OAuth = auth.OAuthCredential{ClientID: clientID, Token: *token}
+	f.settings.OAuth = auth.OAuthCredential{
+		ClientID: clientID,
+		Token:    *token,
+		Scopes:   append([]string(nil), f.settings.OAuth.Scopes...),
+	}
 
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/dialog"
+	postcomponent "github.com/Hayao0819/nth/internal/components/post"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -34,6 +35,16 @@ type postEditedMsg struct {
 	resp   *north.Response
 	err    error
 }
+
+type bookmarkChangedMsg struct {
+	target     *root
+	postID     string
+	bookmarked bool
+	response   *north.Response
+	err        error
+}
+
+func (m bookmarkChangedMsg) Response() *north.Response { return m.response }
 
 type postUpdateTarget interface {
 	UpdatePost(string, string, time.Time)
@@ -123,6 +134,40 @@ func (r *root) handlePostEdited(ctx *reactea.Ctx, msg postEditedMsg) tea.Cmd {
 	return nil
 }
 
+func (r *root) handleBookmarkChanged(ctx *reactea.Ctx, msg bookmarkChangedMsg) tea.Cmd {
+	if msg.target != r {
+		return nil
+	}
+	delete(r.bookmarking, msg.postID)
+	r.setResponse(msg.response)
+	update := postcomponent.ReactionUpdate{
+		PostID:   msg.postID,
+		Action:   postcomponent.Bookmark,
+		Bookmark: &msg.bookmarked,
+		Err:      msg.err,
+	}
+	if msg.err != nil {
+		r.problem = msg.err
+		r.notice = ""
+
+		return r.Wrapper.Update(ctx, update)
+	}
+	r.problem = nil
+	r.notice = "Bookmark removed"
+	if msg.bookmarked {
+		r.notice = "Bookmarked"
+	}
+	r.feed.SetBookmarked(msg.postID, msg.bookmarked)
+	if cached, ok := r.posts[msg.postID]; ok {
+		if target := cached.DisplayPost(); target != nil {
+			target.Bookmarked = msg.bookmarked
+			r.posts[msg.postID] = cached
+		}
+	}
+
+	return r.Wrapper.Update(ctx, update)
+}
+
 func (r *root) handleSubmission(ctx *reactea.Ctx, result modal.Result[dialog.Submission]) tea.Cmd {
 	if !result.Ok() {
 		return nil
@@ -130,9 +175,9 @@ func (r *root) handleSubmission(ctx *reactea.Ctx, result modal.Result[dialog.Sub
 
 	submission := result.Value
 	key := submissionDraftKey(submission)
-	r.rememberDraft(key, submission.Text)
+	r.rememberDraft(key, submission)
 	if submission.Canceled {
-		if strings.TrimSpace(submission.Text) != "" {
+		if strings.TrimSpace(submission.Text) != "" || len(submission.MediaIDs) > 0 || submission.Poll != nil || len(submission.ThreadItems) > 0 {
 			r.notice = "Draft saved"
 		}
 

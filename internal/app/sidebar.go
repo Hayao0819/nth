@@ -37,19 +37,22 @@ type sidebar struct {
 }
 
 type sidebarRenderKey struct {
-	pageKind      pageKind
-	pageKey       string
-	mode          feed.Mode
-	unread        int
-	unreadFailed  bool
-	notifications bool
-	messages      bool
-	bookmarks     bool
-	account       bool
-	name          string
-	handle        string
-	following     int
-	followers     int
+	pageKind       pageKind
+	pageKey        string
+	mode           feed.Mode
+	unread         int
+	unreadFailed   bool
+	dmUnread       int
+	dmUnreadFailed bool
+	notifications  bool
+	messages       bool
+	bookmarks      bool
+	lists          bool
+	account        bool
+	name           string
+	handle         string
+	following      int
+	followers      int
 }
 
 type sidebarHit struct {
@@ -97,15 +100,18 @@ func (s *sidebar) Render(ctx *reactea.Ctx) string {
 func (s *sidebar) renderKey() sidebarRenderKey {
 	r := s.root
 	key := sidebarRenderKey{
-		pageKind:      r.page.kind,
-		pageKey:       r.page.key,
-		mode:          r.feed.CurrentMode(),
-		unread:        r.unread,
-		unreadFailed:  r.unreadErr != nil,
-		notifications: r.notifications != nil,
-		messages:      r.messages != nil,
-		bookmarks:     r.bookmarks != nil,
-		account:       r.me != nil,
+		pageKind:       r.page.kind,
+		pageKey:        r.page.key,
+		mode:           r.feed.CurrentMode(),
+		unread:         r.unread,
+		unreadFailed:   r.unreadErr != nil,
+		dmUnread:       r.dmUnread,
+		dmUnreadFailed: r.dmUnreadErr != nil,
+		notifications:  r.notifications != nil,
+		messages:       r.messages != nil,
+		bookmarks:      r.bookmarks != nil,
+		lists:          r.lists != nil,
+		account:        r.me != nil,
 	}
 	if r.me != nil {
 		key.name = r.me.Name
@@ -140,12 +146,14 @@ func (s *sidebar) build(width, height int) sidebarLayout {
 		addItem(r.page.kind == notificationsPage, "2", notificationLabel(r), navigationMsg{action: navigateNotifications})
 	}
 	if r.messages != nil {
-		addItem(r.page.kind == messagesPage, "3", "Messages", navigationMsg{action: navigateMessages})
+		addItem(r.page.kind == messagesPage, "3", messageLabel(r), navigationMsg{action: navigateMessages})
 	}
 	if r.bookmarks != nil {
 		addItem(r.page.kind == bookmarksPage, "4", "Bookmarks", navigationMsg{action: navigateBookmarks})
 	}
-	addItem(r.page.kind == listsPage, "", "Lists", navigationMsg{action: navigateLists})
+	if r.lists != nil {
+		addItem(r.page.kind == listsPage, "", "Lists", navigationMsg{action: navigateLists})
+	}
 	addItem(r.page.kind == profilePage && r.me != nil && strings.EqualFold(r.page.key, r.me.Handle), "", "Profile", navigationMsg{action: navigateProfile})
 	first := len(lines)
 	lines = append(lines, "  "+r.theme.Button.Width(min(18, innerWidth)).Align(lipgloss.Center).Render("n  Post"), "")
@@ -183,6 +191,17 @@ func notificationLabel(r *root) string {
 	}
 
 	return "Notifications"
+}
+
+func messageLabel(r *root) string {
+	if r.dmUnreadErr != nil {
+		return "Messages !"
+	}
+	if r.dmUnread > 0 {
+		return fmt.Sprintf("Messages (%d)", r.dmUnread)
+	}
+
+	return "Messages"
 }
 
 func sidebarItem(active bool, key, label string, width int, theme ui.Theme) string {

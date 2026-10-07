@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/nth/internal/components/termimage"
-	"github.com/Hayao0819/nth/internal/domain/session"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -30,9 +30,9 @@ func Run(ctx context.Context, api API, options Options) error {
 	)
 	defer program.Scope().Close()
 	if source, ok := api.(interface {
-		SetCookieRefreshHandler(func(*session.RefreshRequest))
+		SetCookieRefreshHandler(func(*domain.RefreshRequest))
 	}); ok {
-		source.SetCookieRefreshHandler(func(request *session.RefreshRequest) {
+		source.SetCookieRefreshHandler(func(request *domain.RefreshRequest) {
 			program.Send(request)
 		})
 		defer source.SetCookieRefreshHandler(nil)

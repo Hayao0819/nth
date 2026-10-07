@@ -29,6 +29,7 @@ type fakeAPI struct {
 	unliked       []string
 	reposted      []string
 	unreposted    []string
+	listCalls     int
 }
 
 func (f *fakeAPI) response() *north.Response {
@@ -171,6 +172,44 @@ func (f *fakeAPI) UndoRepost(_ context.Context, id string) (north.RepostState, *
 	f.unreposted = append(f.unreposted, id)
 
 	return north.RepostState{Reposted: false, RepostCount: 3}, f.response(), nil
+}
+
+func (f *fakeAPI) Lists(context.Context, string) (north.ListCollection, *north.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listCalls++
+
+	return north.ListCollection{Items: []north.List{{
+		ID:            "friends",
+		Name:          "Friends",
+		Owner:         north.User{ID: "me", Handle: "alice", Name: "Alice"},
+		OwnedByViewer: true,
+		MemberCount:   2,
+	}}}, f.response(), nil
+}
+
+func (f *fakeAPI) List(_ context.Context, id string) (north.List, *north.Response, error) {
+	return north.List{ID: id, Name: "Friends", Owner: north.User{Handle: "alice"}}, f.response(), nil
+}
+
+func (f *fakeAPI) ListTimeline(context.Context, string, string) (north.PostPage, *north.Response, error) {
+	return north.PostPage{Items: []north.Post{testPost("list-post", "from a list")}}, f.response(), nil
+}
+
+func (f *fakeAPI) FollowList(context.Context, string) (bool, *north.Response, error) {
+	return true, f.response(), nil
+}
+
+func (f *fakeAPI) UnfollowList(context.Context, string) (bool, *north.Response, error) {
+	return true, f.response(), nil
+}
+
+func (f *fakeAPI) PinList(context.Context, string) (bool, *north.Response, error) {
+	return true, f.response(), nil
+}
+
+func (f *fakeAPI) UnpinList(context.Context, string) (bool, *north.Response, error) {
+	return true, f.response(), nil
 }
 
 func testPost(id, text string) north.Post {

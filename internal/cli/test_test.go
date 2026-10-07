@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Hayao0819/nth/internal/app"
-	diagnosticpage "github.com/Hayao0819/nth/internal/pages/diagnostic"
+	diagnosticfeature "github.com/Hayao0819/nth/internal/features/diagnostic"
 	"github.com/Hayao0819/nth/internal/services/auth"
 )
 
@@ -26,7 +26,7 @@ func TestTestCommandRunsDiagnosticsWithoutStartingClient(t *testing.T) {
 
 			return nil
 		},
-		diagnose: func(_ context.Context, api diagnosticpage.API) error {
+		diagnose: func(_ context.Context, api diagnosticfeature.API) error {
 			diagnosed = true
 			if api == nil {
 				t.Fatal("diagnostic API is nil")

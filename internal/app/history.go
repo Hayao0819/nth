@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "charm.land/bubbletea/v2"
-	searchpage "github.com/Hayao0819/nth/internal/pages/search"
+	searchfeature "github.com/Hayao0819/nth/internal/features/search"
 	"github.com/Hayao0819/reactea/v2"
 )
 
@@ -12,7 +12,7 @@ func (r *root) pushRoute(ctx *reactea.Ctx, target string) tea.Cmd {
 	}
 
 	current := ctx.Route()
-	if search, ok := r.currentPage().(*searchpage.Screen); ok {
+	if search, ok := r.currentPage().(*searchfeature.Screen); ok {
 		current = searchRoute(search.Query())
 	}
 	r.history = append(r.history, current)

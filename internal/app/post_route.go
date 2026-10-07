@@ -8,7 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
-	postpage "github.com/Hayao0819/nth/internal/pages/post"
+	postfeature "github.com/Hayao0819/nth/internal/features/post"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/state"
@@ -25,7 +25,7 @@ type postRoutePage struct {
 	root     *root
 	id       string
 	resource state.Resource[postResult]
-	page     *postpage.Screen
+	page     *postfeature.Screen
 }
 
 func newPostRoute(root *root, id string) *postRoutePage {

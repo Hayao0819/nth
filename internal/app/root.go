@@ -6,11 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/dialog"
 	"github.com/Hayao0819/nth/internal/components/feed"
 	"github.com/Hayao0819/nth/internal/components/termimage"
-	bookmarkdomain "github.com/Hayao0819/nth/internal/domain/bookmark"
-	messagedomain "github.com/Hayao0819/nth/internal/domain/message"
-	"github.com/Hayao0819/nth/internal/domain/notification"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/layout"
@@ -21,28 +20,46 @@ type trendAPI interface {
 	Trends(context.Context, string) ([]north.Trend, *north.Response, error)
 }
 
+type trendDismissAPI interface {
+	DismissTrend(context.Context, string) (bool, *north.Response, error)
+}
+
 type root struct {
 	reactea.Wrapper
 
-	api           API
-	notifications notification.API
-	bookmarks     bookmarkdomain.API
-	messages      messagedomain.API
-	trendAPI      trendAPI
-	images        *termimage.Renderer
-	theme         ui.Theme
-	feed          *feed.Feed
-	body          *layout.Box
-	main          *layout.Box
-	view          *layout.Box
-	statusView    *layout.Box
-	compact       *layout.Box
-	surface       *pageSurface
-	pages         *router.Component
-	page          pageState
-	history       []string
-	posts         map[string]north.Post
-	users         map[string]north.User
+	api             API
+	notifications   domain.NotificationAPI
+	bookmarks       domain.BookmarkAPI
+	bookmarkFolders domain.BookmarkFolderAPI
+	messages        domain.MessageAPI
+	messageUnread   domain.MessageUnreadAPI
+	lists           domain.ListAPI
+	listMembers     domain.ListMemberAPI
+	savedPosts      domain.SavedPostAPI
+	media           domain.MediaAPI
+	accountSafety   domain.AccountSafetyAPI
+	mutedKeywords   domain.MutedKeywordAPI
+	connections     domain.UserConnectionsAPI
+	postActivity    domain.PostActivityAPI
+	threads         domain.ThreadAPI
+	trendAPI        trendAPI
+	trendDismiss    trendDismissAPI
+	images          *termimage.Renderer
+	theme           ui.Theme
+	feed            *feed.Feed
+	body            *layout.Box
+	main            *layout.Box
+	view            *layout.Box
+	statusView      *layout.Box
+	compact         *layout.Box
+	surface         *pageSurface
+	pages           *router.Component
+	page            pageState
+	history         []string
+	posts           map[string]north.Post
+	users           map[string]north.User
+	listItems       map[string]north.List
+	bookmarkItems   map[string]north.BookmarkFolder
 
 	compactHeader reactea.Component
 	compactFooter reactea.Component
@@ -58,25 +75,28 @@ type root struct {
 	contentLeft   int
 	contentWidth  int
 
-	me         *north.User
-	meErr      error
-	posting    bool
-	editing    bool
-	deleting   bool
-	drafts     map[string]string
-	notice     string
-	problem    error
-	postFailed bool
-	failureJob string
-	resp       *north.Response
-	respAt     time.Time
-	unread     int
-	unreadErr  error
-	trends     []north.Trend
-	trendErr   error
-	trendBusy  bool
-	linkedUser map[string]int
-	resources  rootResources
+	me          *north.User
+	meErr       error
+	posting     bool
+	editing     bool
+	deleting    bool
+	bookmarking map[string]struct{}
+	drafts      map[string]dialog.Submission
+	notice      string
+	problem     error
+	postFailed  bool
+	failureJob  string
+	resp        *north.Response
+	respAt      time.Time
+	unread      int
+	unreadErr   error
+	dmUnread    int
+	dmUnreadErr error
+	trends      []north.Trend
+	trendErr    error
+	trendBusy   bool
+	linkedUser  map[string]int
+	resources   rootResources
 }
 
 func newRoot(api API) *root {
@@ -94,19 +114,66 @@ func newRootWithServices(api API, trends trendAPI, images *termimage.Renderer) *
 	theme := ui.NewTheme()
 	feed := feed.NewWithImages(api, theme, images)
 	r := &root{
-		api:        api,
-		trendAPI:   trends,
-		images:     images,
-		theme:      theme,
-		feed:       feed,
-		drafts:     make(map[string]string),
-		linkedUser: make(map[string]int),
-		posts:      make(map[string]north.Post),
-		users:      make(map[string]north.User),
+		api:           api,
+		trendAPI:      trends,
+		images:        images,
+		theme:         theme,
+		feed:          feed,
+		drafts:        make(map[string]dialog.Submission),
+		bookmarking:   make(map[string]struct{}),
+		linkedUser:    make(map[string]int),
+		posts:         make(map[string]north.Post),
+		users:         make(map[string]north.User),
+		listItems:     make(map[string]north.List),
+		bookmarkItems: make(map[string]north.BookmarkFolder),
 	}
-	r.notifications, _ = api.(notification.API)
-	r.bookmarks, _ = api.(bookmarkdomain.API)
-	r.messages, _ = api.(messagedomain.API)
+	r.trendDismiss, _ = trends.(trendDismissAPI)
+	if supported, ok := trends.(interface{ SupportsTrendDismiss() bool }); ok && !supported.SupportsTrendDismiss() {
+		r.trendDismiss = nil
+	}
+	if supported, ok := api.(interface{ SupportsNotifications() bool }); !ok || supported.SupportsNotifications() {
+		r.notifications, _ = api.(domain.NotificationAPI)
+	}
+	if supported, ok := api.(interface{ SupportsBookmarks() bool }); !ok || supported.SupportsBookmarks() {
+		r.bookmarks, _ = api.(domain.BookmarkAPI)
+	}
+	if supported, ok := api.(interface{ SupportsBookmarkFolders() bool }); !ok || supported.SupportsBookmarkFolders() {
+		r.bookmarkFolders, _ = api.(domain.BookmarkFolderAPI)
+	}
+	if supported, ok := api.(interface{ SupportsMessages() bool }); !ok || supported.SupportsMessages() {
+		r.messages, _ = api.(domain.MessageAPI)
+	}
+	if supported, ok := api.(interface{ SupportsDMUnread() bool }); !ok || supported.SupportsDMUnread() {
+		r.messageUnread, _ = api.(domain.MessageUnreadAPI)
+	}
+	if supported, ok := api.(interface{ SupportsLists() bool }); !ok || supported.SupportsLists() {
+		r.lists, _ = api.(domain.ListAPI)
+	}
+	if supported, ok := api.(interface{ SupportsListMembers() bool }); !ok || supported.SupportsListMembers() {
+		r.listMembers, _ = api.(domain.ListMemberAPI)
+	}
+	if supported, ok := api.(interface{ SupportsSavedPosts() bool }); !ok || supported.SupportsSavedPosts() {
+		r.savedPosts, _ = api.(domain.SavedPostAPI)
+	}
+	if supported, ok := api.(interface{ SupportsMedia() bool }); !ok || supported.SupportsMedia() {
+		r.media, _ = api.(domain.MediaAPI)
+	}
+	if supported, ok := api.(interface{ SupportsAccountSafety() bool }); !ok || supported.SupportsAccountSafety() {
+		r.accountSafety, _ = api.(domain.AccountSafetyAPI)
+	}
+	if supported, ok := api.(interface{ SupportsMutedKeywords() bool }); !ok || supported.SupportsMutedKeywords() {
+		r.mutedKeywords, _ = api.(domain.MutedKeywordAPI)
+	}
+	if supported, ok := api.(interface{ SupportsUserConnections() bool }); !ok || supported.SupportsUserConnections() {
+		r.connections, _ = api.(domain.UserConnectionsAPI)
+	}
+	r.postActivity, _ = api.(domain.PostActivityAPI)
+	if supported, ok := api.(interface{ SupportsThreads() bool }); !ok || supported.SupportsThreads() {
+		r.threads, _ = api.(domain.ThreadAPI)
+	}
+	if supported, ok := api.(interface{ SupportsTrends() bool }); ok && !supported.SupportsTrends() {
+		r.trendAPI = nil
+	}
 
 	r.compactHeader = layout.Memo(reactea.Func(r.renderHeader), func() any {
 		return r.compactHeaderKey()
@@ -152,6 +219,7 @@ func (r *root) Init(ctx *reactea.Ctx) tea.Cmd {
 		reactea.SetMouseMode(tea.MouseModeCellMotion),
 		r.loadMe(ctx),
 		r.loadUnread(ctx),
+		r.loadDMUnread(ctx),
 		r.loadTrends(ctx),
 	)
 }

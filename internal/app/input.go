@@ -50,9 +50,9 @@ func (r *root) handleInput(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		return r.openMessages(ctx)
 	case r.bookmarks != nil && reactea.Key(msg, "4"):
 		return r.openBookmarks(ctx)
-	case reactea.Key(msg, "tab"):
+	case r.page.kind == timelinePage && reactea.Key(msg, "tab"):
 		return r.cycleTimeline(ctx, 1)
-	case reactea.Key(msg, "shift+tab"):
+	case r.page.kind == timelinePage && reactea.Key(msg, "shift+tab"):
 		return r.cycleTimeline(ctx, -1)
 	case reactea.Key(msg, ".") && (r.meErr != nil || r.unreadErr != nil):
 		commands := []tea.Cmd{r.Wrapper.Update(ctx, msg)}
@@ -66,6 +66,10 @@ func (r *root) handleInput(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		return tea.Batch(commands...)
 	case reactea.Key(msg, ".") && r.trendErr != nil:
 		return r.loadTrends(ctx)
+	case r.wide && r.trendDismiss != nil && reactea.Key(msg, "alt+6", "alt+7", "alt+8", "alt+9", "alt+0"):
+		if tag, ok := r.trendTag(msg, "alt+"); ok {
+			return r.dismissTrend(ctx.Context(), tag)
+		}
 	case r.wide && reactea.Key(msg, "6", "7", "8", "9", "0"):
 		if query, ok := r.trendQuery(msg); ok {
 			return r.searchFor(ctx, query)

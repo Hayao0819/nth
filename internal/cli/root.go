@@ -10,8 +10,8 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
 	"github.com/Hayao0819/nth/internal/app"
-	diagnosticpage "github.com/Hayao0819/nth/internal/pages/diagnostic"
-	setupui "github.com/Hayao0819/nth/internal/pages/setup"
+	diagnosticfeature "github.com/Hayao0819/nth/internal/features/diagnostic"
+	setupui "github.com/Hayao0819/nth/internal/features/setup"
 	"github.com/Hayao0819/nth/internal/services/auth"
 	"github.com/Hayao0819/nth/internal/services/northapi"
 	"github.com/spf13/cobra"
@@ -32,7 +32,7 @@ type dependencies struct {
 	credentials credentialService
 	setup       func(context.Context, auth.Settings, []auth.Profile, auth.OAuthStartFunc, func(auth.Settings) error) (bool, error)
 	start       func(context.Context, app.API, app.Options) error
-	diagnose    func(context.Context, diagnosticpage.API) error
+	diagnose    func(context.Context, diagnosticfeature.API) error
 }
 
 func defaultDependencies() dependencies {
@@ -40,7 +40,7 @@ func defaultDependencies() dependencies {
 		credentials: auth.NewManager(),
 		setup:       setupui.Run,
 		start:       app.Run,
-		diagnose:    diagnosticpage.Run,
+		diagnose:    diagnosticfeature.Run,
 	}
 }
 
@@ -198,7 +198,7 @@ func configure(ctx context.Context, deps dependencies, force bool) (auth.Setting
 	if err != nil {
 		return settings, false, err
 	}
-	if !force && settings.Complete() {
+	if !force && settings.Complete() && !settings.OAuthNeedsAuthorization() {
 		return settings, true, nil
 	}
 
@@ -219,6 +219,9 @@ func configure(ctx context.Context, deps dependencies, force bool) (auth.Setting
 	}
 	if !settings.Complete() {
 		return settings, false, setupError("credentials were not saved")
+	}
+	if settings.OAuthNeedsAuthorization() {
+		return settings, false, setupError("OAuth needs additional authorization")
 	}
 
 	return settings, true, nil

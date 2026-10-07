@@ -34,9 +34,11 @@ type inspectorLayout struct {
 }
 
 type trendHit struct {
-	first int
-	last  int
-	query string
+	first       int
+	last        int
+	dismissLeft int
+	query       string
+	tag         string
 }
 
 func (l inspectorLayout) authorHit(x, y int) bool {
@@ -60,6 +62,9 @@ func (i *inspector) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	}
 	for _, hit := range layout.trends {
 		if y >= hit.first && y <= hit.last {
+			if x >= hit.dismissLeft && i.root.trendDismiss != nil {
+				return i.root.dismissTrend(ctx.Context(), hit.tag)
+			}
 			return func() tea.Msg {
 				return navigationMsg{action: navigateSearch, query: hit.query}
 			}
@@ -141,11 +146,17 @@ func (i *inspector) build(width, height int) inspectorLayout {
 				label = query
 			}
 			first := len(lines)
+			right := fmt.Sprintf("%d posts", trend.Count)
+			if r.trendDismiss != nil {
+				right += "  ×"
+			}
 			lines = append(lines,
 				"  "+r.theme.Dim.Render(fmt.Sprintf("%s · Trending", [...]string{"6", "7", "8", "9", "0"}[index])),
-				"  "+ui.Sides(r.theme.Heading.Render(ui.Clip(ui.SafeInline(label), max(1, width-14))), r.theme.Dim.Render(fmt.Sprintf("%d posts", trend.Count)), max(1, width-4)),
+				"  "+ui.Sides(r.theme.Heading.Render(ui.Clip(ui.SafeInline(label), max(1, width-lipgloss.Width(right)-6))), r.theme.Dim.Render(right), max(1, width-4)),
 			)
-			result.trends = append(result.trends, trendHit{first: first, last: len(lines) - 1, query: query})
+			result.trends = append(result.trends, trendHit{
+				first: first, last: len(lines) - 1, dismissLeft: max(0, width-4), query: query, tag: trend.Tag,
+			})
 		}
 	}
 
