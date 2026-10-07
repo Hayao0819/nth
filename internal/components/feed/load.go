@@ -8,7 +8,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
-	"github.com/Hayao0819/nth/internal/components/termimage"
 	"github.com/Hayao0819/nth/internal/support/collection"
 	"github.com/Hayao0819/reactea/v2"
 )
@@ -147,27 +146,9 @@ func (f *Feed) loadNearEnd(ctx *reactea.Ctx) tea.Cmd {
 }
 
 func (f *Feed) loadImages(ctx *reactea.Ctx, posts []north.Post) tea.Cmd {
-	if f.images == nil || !f.images.Enabled() {
-		return nil
-	}
 	columns, rows := postcomponent.CardMediaSize(ctx.Width())
-	commands := make([]tea.Cmd, 0, len(posts)*2)
-	for index := range posts {
-		target := posts[index].DisplayPost()
-		if target == nil {
-			continue
-		}
-		if target.Author.AvatarURL != nil {
-			commands = append(commands, f.images.Load(ctx.Context(), *target.Author.AvatarURL, termimage.AvatarColumns, termimage.AvatarRows))
-		}
-		for _, media := range target.Media {
-			if media.Kind == north.MediaPhoto || media.Kind == north.MediaGIF {
-				commands = append(commands, f.images.Load(ctx.Context(), postcomponent.MediaPreviewURL(media), columns, rows))
-			}
-		}
-	}
 
-	return tea.Batch(commands...)
+	return postcomponent.LoadImages(ctx.Context(), f.images, posts, columns, rows)
 }
 
 func (f *Feed) nearEnd(width, height int) bool {

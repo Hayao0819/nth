@@ -13,8 +13,21 @@ import (
 type localPostState struct {
 	like     *north.LikeState
 	repost   *north.RepostState
+	bookmark *bool
 	text     *string
 	editedAt *time.Time
+}
+
+func (f *Feed) SetBookmarked(id string, bookmarked bool) {
+	state := f.localState[id]
+	state.bookmark = &bookmarked
+	f.localState[id] = state
+	for index := range f.posts {
+		target := f.posts[index].DisplayPost()
+		if target != nil && target.ID == id {
+			target.Bookmarked = bookmarked
+		}
+	}
 }
 
 func (f *Feed) SetMode(ctx *reactea.Ctx, mode Mode, query string) tea.Cmd {
@@ -46,6 +59,16 @@ func (f *Feed) ClearSearch(query string) {
 }
 
 func (f *Feed) Refresh(ctx *reactea.Ctx) tea.Cmd { return f.load(ctx, false) }
+
+func (f *Feed) Clear() {
+	f.seq++
+	f.loading = false
+	f.loadingMore = false
+	f.posts = nil
+	f.nextCursor = nil
+	f.selected, f.top = 0, 0
+	f.err, f.notice = nil, ""
+}
 
 func (f *Feed) SelectedPost() *north.Post {
 	if f.selected < 0 || f.selected >= len(f.posts) {
@@ -160,6 +183,9 @@ func (f *Feed) applyLocalState(posts []north.Post) []north.Post {
 			if state.repost != nil {
 				target.Reposted = state.repost.Reposted
 				target.RepostCount = state.repost.RepostCount
+			}
+			if state.bookmark != nil {
+				target.Bookmarked = *state.bookmark
 			}
 			if state.text != nil {
 				target.Text = *state.text

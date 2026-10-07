@@ -133,3 +133,16 @@ func TestHiddenQuotedPostDoesNotRevealItsText(t *testing.T) {
 		t.Fatalf("hidden quote leaked through the card: %q", plain)
 	}
 }
+
+func TestCardRendersAndTargetsBookmark(t *testing.T) {
+	t.Parallel()
+
+	post := north.Post{Author: north.User{Name: "Alice", Handle: "alice"}, Bookmarked: true}
+	plain := ansi.Strip(RenderCard(post, 60, true, ui.NewTheme(), time.Now()))
+	if !strings.Contains(plain, "♣") {
+		t.Fatalf("bookmarked card = %q", plain)
+	}
+	if action := CardActionAt(55, 60); action != Bookmark {
+		t.Fatalf("rightmost action = %v", action)
+	}
+}

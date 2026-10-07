@@ -8,6 +8,7 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
+	"github.com/Hayao0819/reactea/v2/modal"
 	"github.com/Hayao0819/reactea/v2/testkit"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -73,5 +74,47 @@ func TestComposeConcealsItsReplyPreview(t *testing.T) {
 	plain := testkit.Plain(program)
 	if strings.Contains(plain, "SHOULD_NOT_RENDER") || !strings.Contains(plain, "Hidden: MUTED") {
 		t.Fatalf("hidden reply leaked through the composer:\n%s", plain)
+	}
+}
+
+func TestComposeBuildsAndRestoresThreadItems(t *testing.T) {
+	t.Parallel()
+
+	compose := NewCompose(ui.NewTheme(), nil, nil, "first").SetThreadEnabled(true)
+	compose.mediaIDs = []string{"media-1"}
+	compose.poll = &north.CreatePoll{Options: []string{"yes", "no"}, DurationMinutes: 60}
+	compose.addThreadItem()
+	if len(compose.thread) != 1 || compose.thread[0].Text != "first" || len(compose.thread[0].MediaIDs) != 1 || compose.thread[0].Poll == nil {
+		t.Fatalf("thread = %#v", compose.thread)
+	}
+	if compose.input.Widget.Value() != "" || len(compose.mediaIDs) != 0 || compose.poll != nil {
+		t.Fatalf("current item was not cleared: text=%q media=%#v poll=%#v", compose.input.Widget.Value(), compose.mediaIDs, compose.poll)
+	}
+	compose.undoThreadItem()
+	if len(compose.thread) != 0 || compose.input.Widget.Value() != "first" || compose.poll == nil {
+		t.Fatalf("restored composer = thread %#v, text %q, poll %#v", compose.thread, compose.input.Widget.Value(), compose.poll)
+	}
+}
+
+func TestComposeAcceptsPollForm(t *testing.T) {
+	t.Parallel()
+
+	compose := NewCompose(ui.NewTheme(), nil, nil, "question")
+	compose.pollForm = true
+	command, handled := compose.updatePostOptions(nil, modal.Result[FormResult]{Value: FormResult{
+		Values: map[string]string{
+			"option1":  "yes",
+			"option2":  "no",
+			"option3":  "",
+			"option4":  "",
+			"duration": "60",
+		},
+		Toggles: map[string]bool{},
+	}})
+	if !handled || command != nil || compose.poll == nil {
+		t.Fatalf("poll result = handled %t, command %#v, poll %#v", handled, command, compose.poll)
+	}
+	if compose.poll.DurationMinutes != 60 || len(compose.poll.Options) != 2 || compose.poll.Options[0] != "yes" {
+		t.Fatalf("poll = %#v", compose.poll)
 	}
 }

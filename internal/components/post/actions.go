@@ -13,6 +13,7 @@ const (
 	Repost
 	Like
 	Quote
+	Bookmark
 	Edit
 	Delete
 	ViewAuthor
@@ -25,11 +26,12 @@ type ActionMsg struct {
 }
 
 type ReactionUpdate struct {
-	PostID string
-	Action Action
-	Like   *north.LikeState
-	Repost *north.RepostState
-	Err    error
+	PostID   string
+	Action   Action
+	Like     *north.LikeState
+	Repost   *north.RepostState
+	Bookmark *bool
+	Err      error
 }
 
 func Request(action Action, post north.Post) tea.Cmd {
@@ -44,14 +46,16 @@ func CanInteract(post *north.Post) bool {
 
 func CardActionAt(x, width int) Action {
 	usable := max(1, width-4)
-	switch ui.ColumnAt(x-4, usable, 4) {
+	switch ui.ColumnAt(x-4, usable, 5) {
 	case 0:
 		return Reply
 	case 1:
 		return Repost
 	case 2:
 		return Like
-	default:
+	case 3:
 		return Quote
+	default:
+		return Bookmark
 	}
 }

@@ -6,8 +6,9 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/navigation"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
@@ -15,25 +16,37 @@ import (
 )
 
 type Submission struct {
-	Text     string
-	ReplyTo  string
-	QuoteID  string
-	EditID   string
-	MediaIDs []string
-	Canceled bool
+	Text        string
+	ReplyTo     string
+	QuoteID     string
+	EditID      string
+	MediaIDs    []string
+	Poll        *north.CreatePoll
+	ThreadItems []north.ThreadItem
+	Canceled    bool
 }
 
 type Compose struct {
 	reactea.Wrapper
 
-	theme    ui.Theme
-	input    *reactea.ReactifiedWidget[textarea.Model]
-	replyTo  *north.Post
-	quote    *north.Post
-	problem  string
-	restored bool
-	editID   string
-	mediaIDs []string
+	theme       ui.Theme
+	input       *reactea.ReactifiedWidget[textarea.Model]
+	replyTo     *north.Post
+	quote       *north.Post
+	problem     string
+	restored    bool
+	editID      string
+	mediaIDs    []string
+	media       []north.Media
+	mediaAPI    domain.MediaAPI
+	mediaPrompt mediaPromptKind
+	mediaBusy   bool
+	mediaNotice string
+	uploaded    map[string]bool
+	poll        *north.CreatePoll
+	pollForm    bool
+	thread      []north.ThreadItem
+	threadable  bool
 }
 
 func NewEdit(theme ui.Theme, post north.Post, draft string) *Compose {
@@ -47,6 +60,7 @@ func NewEdit(theme ui.Theme, post north.Post, draft string) *Compose {
 	for _, media := range post.Media {
 		if media.ID != "" {
 			compose.mediaIDs = append(compose.mediaIDs, media.ID)
+			compose.media = append(compose.media, media)
 		}
 	}
 
@@ -80,133 +94,78 @@ func NewCompose(theme ui.Theme, replyTo, quote *north.Post, draft string) *Compo
 		replyTo:  replyTo,
 		quote:    quote,
 		restored: strings.TrimSpace(draft) != "",
+		uploaded: make(map[string]bool),
 	}
+}
+
+func (d *Compose) SetMediaAPI(api domain.MediaAPI) *Compose {
+	d.mediaAPI = api
+
+	return d
+}
+
+func (d *Compose) RestoreMediaIDs(ids []string) *Compose {
+	d.mediaIDs = append([]string(nil), ids...)
+	d.restored = d.restored || len(ids) > 0
+
+	return d
+}
+
+func (d *Compose) RestorePoll(poll *north.CreatePoll) *Compose {
+	d.poll = clonePoll(poll)
+	d.restored = d.restored || poll != nil
+
+	return d
+}
+
+func (d *Compose) RestoreThread(items []north.ThreadItem) *Compose {
+	d.thread = cloneThreadItems(items)
+	d.restored = d.restored || len(items) > 0
+
+	return d
+}
+
+func (d *Compose) SetThreadEnabled(enabled bool) *Compose {
+	d.threadable = enabled && d.replyTo == nil && d.quote == nil && d.editID == ""
+
+	return d
 }
 
 func (d *Compose) Init(ctx *reactea.Ctx) tea.Cmd {
 	return tea.Batch(d.Wrapper.Init(ctx), d.input.Widget.Focus())
 }
 
-func (d *Compose) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
-	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-		x, y, inside := reactea.Mouse(ctx, msg)
-		if inside && y == ctx.Height()-d.theme.Dialog.GetBorderBottomSize()-1 {
-			innerWidth := max(1, ctx.Width()-d.theme.Dialog.GetHorizontalFrameSize())
-			buttonWidth := lipgloss.Width(d.theme.Button.Padding(0, 1).Render("Post"))
-			buttonLeft := d.theme.Dialog.GetBorderLeftSize() + innerWidth - buttonWidth
-			if x >= buttonLeft && x < d.theme.Dialog.GetBorderLeftSize()+innerWidth {
-				return d.send(ctx)
-			}
-			if x < d.theme.Dialog.GetBorderLeftSize()+12 {
-				return d.cancel(ctx)
-			}
-		}
-	}
-
-	switch {
-	case reactea.Key(msg, "esc"):
-		return d.cancel(ctx)
-	case reactea.Key(msg, "ctrl+s", "ctrl+enter", "ctrl+j", "ctrl+m", "alt+enter"):
-		return d.send(ctx)
-	}
-
-	d.problem = ""
-
-	return d.Wrapper.Update(ctx, msg)
-}
-
-func (d *Compose) Render(ctx *reactea.Ctx) string {
-	width, height := ctx.Size()
-	style := d.theme.Dialog
-	innerWidth := max(0, width-style.GetHorizontalFrameSize())
-	innerHeight := max(0, height-style.GetVerticalFrameSize())
-	inputHeight := max(1, innerHeight-2)
-
-	title := "New post"
-	target := d.replyTo
-	if d.editID != "" {
-		title = "Edit post"
-	} else if target != nil {
-		title = "Reply to @" + ui.SafeInline(target.Author.Handle)
-	} else if d.quote != nil {
-		target = d.quote
-		title = "Quote @" + ui.SafeInline(target.Author.Handle)
-	}
-	if d.restored {
-		title += " · Draft"
-	}
-	contextLine := ""
-	inputTop := 1
-	if target != nil {
-		inputHeight = max(1, innerHeight-4)
-		inputTop = 3
-		preview := ui.SafeInline(target.Text)
-		if target.Deleted {
-			preview = "Post deleted"
-		} else if target.HiddenReason != "" {
-			preview = "Hidden: " + string(target.HiddenReason)
-		} else if target.Unavailable {
-			preview = "Post unavailable"
-		}
-		if preview == "" && len(target.Media) > 0 {
-			preview = "[media]"
-		}
-		author := ui.SafeInline(target.Author.Name) + "  @" + ui.SafeInline(target.Author.Handle)
-		contextLine = d.theme.Dim.Render(ui.Clip(author, innerWidth)) + "\n" +
-			d.theme.Dim.Render(ui.Clip(preview, innerWidth)) + "\n"
-	}
-
-	inputCtx := ctx.Inset(
-		style.GetBorderLeftSize(),
-		style.GetBorderTopSize()+inputTop,
-		innerWidth,
-		inputHeight,
-	)
-	content := d.theme.ModalTitle.Render(ui.Clip(title, max(1, innerWidth-2))) + "\n" + contextLine +
-		ui.Fit(d.Wrapper.Render(inputCtx), innerWidth, inputHeight) + "\n"
-
-	length := northTextLength(d.input.Widget.Value())
-	count := fmt.Sprintf("%d/280", length)
-	if length > 280 {
-		count = d.theme.Bad.Render(count)
-	}
-	buttonStyle := d.theme.Button
-	if length == 0 || length > 280 {
-		buttonStyle = d.theme.Dim
-	}
-	buttonLabel := "Post"
-	if d.editID != "" {
-		buttonLabel = "Save"
-	}
-	button := buttonStyle.Padding(0, 1).Render(buttonLabel)
-	right := count + "  " + button
-	hint := d.theme.Dim.Render("Esc  Close · Ctrl+S sends")
-	if d.problem != "" {
-		hint = d.theme.Bad.Render(d.problem)
-	}
-	content += ui.Sides(hint, right, innerWidth)
-
-	return RenderDialog(style, content, width, height)
+func (d *Compose) openSaved(ctx *reactea.Ctx) tea.Cmd {
+	return tea.Sequence(modal.Dismiss(ctx), navigation.OpenSavedPosts())
 }
 
 func (d *Compose) send(ctx *reactea.Ctx) tea.Cmd {
 	text := d.input.Widget.Value()
 	length := northTextLength(text)
 	switch {
-	case strings.TrimSpace(text) == "":
-		d.problem = "Write something before posting"
+	case !d.canSend():
+		d.problem = "Write something or attach media before posting"
 	case length > 280:
 		d.problem = fmt.Sprintf("Post is %d units; the limit is 280", length)
 	default:
 		d.problem = ""
 
-		return modal.Return(ctx, Submission{
+		submission := Submission{
 			Text:     text,
 			ReplyTo:  postID(d.replyTo),
 			QuoteID:  postID(d.quote),
 			EditID:   d.editID,
 			MediaIDs: append([]string(nil), d.mediaIDs...),
-		})
+			Poll:     clonePoll(d.poll),
+		}
+		if len(d.thread) > 0 {
+			submission.ThreadItems = cloneThreadItems(d.thread)
+			if !currentThreadItemEmpty(text, d.mediaIDs, d.poll) {
+				submission.ThreadItems = append(submission.ThreadItems, d.currentThreadItem())
+			}
+		}
+
+		return modal.Return(ctx, submission)
 	}
 
 	return nil
@@ -214,13 +173,19 @@ func (d *Compose) send(ctx *reactea.Ctx) tea.Cmd {
 
 func (d *Compose) cancel(ctx *reactea.Ctx) tea.Cmd {
 	return modal.Return(ctx, Submission{
-		Text:     d.input.Widget.Value(),
-		ReplyTo:  postID(d.replyTo),
-		QuoteID:  postID(d.quote),
-		EditID:   d.editID,
-		MediaIDs: append([]string(nil), d.mediaIDs...),
-		Canceled: true,
+		Text:        d.input.Widget.Value(),
+		ReplyTo:     postID(d.replyTo),
+		QuoteID:     postID(d.quote),
+		EditID:      d.editID,
+		MediaIDs:    append([]string(nil), d.mediaIDs...),
+		Poll:        clonePoll(d.poll),
+		ThreadItems: cloneThreadItems(d.thread),
+		Canceled:    true,
 	})
+}
+
+func (d *Compose) canSend() bool {
+	return !currentThreadItemEmpty(d.input.Widget.Value(), d.mediaIDs, d.poll) || len(d.thread) > 0
 }
 
 func postID(post *north.Post) string {

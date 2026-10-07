@@ -152,3 +152,30 @@ func (f *Feed) applyReaction(msg reactionMsg) {
 		}
 	}
 }
+
+func (f *Feed) applyExternalReaction(update postcomponent.ReactionUpdate) {
+	if update.Bookmark == nil {
+		return
+	}
+	if update.Err != nil {
+		f.err = update.Err
+		f.notice = ""
+
+		return
+	}
+	state := f.localState[update.PostID]
+	bookmarked := *update.Bookmark
+	state.bookmark = &bookmarked
+	f.localState[update.PostID] = state
+	f.err = nil
+	f.notice = "Bookmark removed"
+	if bookmarked {
+		f.notice = "Bookmarked"
+	}
+	for index := range f.posts {
+		target := f.posts[index].DisplayPost()
+		if target != nil && target.ID == update.PostID {
+			target.Bookmarked = bookmarked
+		}
+	}
+}

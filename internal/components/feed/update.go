@@ -20,6 +20,11 @@ func (f *Feed) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 
 		return nil
 
+	case postcomponent.ReactionUpdate:
+		f.applyExternalReaction(msg)
+
+		return nil
+
 	case tea.WindowSizeMsg:
 		f.fillLoads = 0
 		f.ensureVisible(ctx.Width(), ctx.Height())
@@ -95,6 +100,10 @@ func (f *Feed) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		return f.ToggleLike(ctx.Context())
 	case reactea.Key(msg, "t"):
 		return f.ToggleRepost(ctx.Context())
+	case reactea.Key(msg, "b"):
+		if post := f.SelectedPost(); post != nil {
+			return postcomponent.Request(postcomponent.Bookmark, *post)
+		}
 	}
 
 	return nil
