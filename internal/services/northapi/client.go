@@ -6,7 +6,7 @@ import (
 
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/go-north/unofficial"
-	"github.com/Hayao0819/nth/internal/domain/conversation"
+	"github.com/Hayao0819/nth/internal/domain"
 )
 
 // Client uses a north.rip web session for all nth operations.
@@ -62,16 +62,28 @@ func (c *Client) Bookmarks(ctx context.Context, cursor string) (north.PostPage, 
 	return publicPostPageResult(c.web.Bookmarks(ctx, cursor))
 }
 
+func (c *Client) Bookmark(ctx context.Context, id string) (north.BookmarkState, *north.Response, error) {
+	response, err := c.web.Bookmark(ctx, id)
+
+	return north.BookmarkState{Bookmarked: err == nil, OK: err == nil}, publicResponse(response), err
+}
+
+func (c *Client) Unbookmark(ctx context.Context, id string) (bool, *north.Response, error) {
+	response, err := c.web.Unbookmark(ctx, id)
+
+	return err == nil, publicResponse(response), err
+}
+
 func (c *Client) Post(ctx context.Context, id string) (north.Post, *north.Response, error) {
 	post, response, err := c.web.Post(ctx, id)
 
 	return post.PublicPost(), publicResponse(response), err
 }
 
-func (c *Client) PostConversation(ctx context.Context, id, cursor string) (conversation.Page, *north.Response, error) {
+func (c *Client) PostConversation(ctx context.Context, id, cursor string) (domain.ConversationPage, *north.Response, error) {
 	page, response, err := c.web.PostConversation(ctx, id, cursor)
 
-	return conversation.Page{
+	return domain.ConversationPage{
 		Ancestors:    publicPosts(page.Ancestors),
 		Post:         page.Tweet.PublicPost(),
 		Replies:      publicPosts(page.Replies),
@@ -84,6 +96,12 @@ func (c *Client) CreatePost(ctx context.Context, request north.CreatePostRequest
 	webRequest := unofficial.CreatePostRequest{
 		Text:     request.Text,
 		QuotedID: request.QuotePostID,
+	}
+	if request.Poll != nil {
+		webRequest.Poll = &unofficial.CreatePollRequest{
+			Options:         append([]string(nil), request.Poll.Options...),
+			DurationMinutes: request.Poll.DurationMinutes,
+		}
 	}
 	if request.Media != nil {
 		webRequest.MediaIDs = request.Media.MediaIDs
@@ -171,22 +189,4 @@ func (c *Client) MarkNotificationsRead(ctx context.Context) (int, *north.Respons
 	response, err := c.web.MarkNotificationsRead(ctx)
 
 	return 0, publicResponse(response), err
-}
-
-func (c *Client) DMConversations(ctx context.Context, cursor string, requests bool) (north.DMConversationPage, *north.Response, error) {
-	page, response, err := c.web.DMConversations(ctx, cursor, requests)
-
-	return publicDMConversationPage(page), publicResponse(response), err
-}
-
-func (c *Client) DMMessages(ctx context.Context, conversationID, cursor string) (north.DMMessagePage, *north.Response, error) {
-	page, response, err := c.web.DMMessages(ctx, conversationID, cursor)
-
-	return publicDMMessagePage(page), publicResponse(response), err
-}
-
-func (c *Client) MarkDMRead(ctx context.Context, conversationID string) (*north.Response, error) {
-	response, err := c.web.MarkDMRead(ctx, conversationID)
-
-	return publicResponse(response), err
 }

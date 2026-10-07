@@ -69,6 +69,14 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 			if !ok || len(media) != 1 || media[0] != "media-1" {
 				t.Errorf("media IDs = %#v", body["mediaIds"])
 			}
+			poll, ok := body["poll"].(map[string]any)
+			if !ok || poll["durationMinutes"] != float64(60) {
+				t.Errorf("poll = %#v", body["poll"])
+			}
+			options, ok := poll["options"].([]any)
+			if !ok || len(options) != 2 || options[0] != "yes" || options[1] != "no" {
+				t.Errorf("poll options = %#v", poll["options"])
+			}
 			writeJSON(t, writer, `{"id":"post-2","text":"reply"}`)
 		default:
 			http.NotFound(writer, request)
@@ -116,6 +124,7 @@ func TestClientAdaptsWebAPI(t *testing.T) {
 		Media:       &north.CreatePostMedia{MediaIDs: []string{"media-1"}},
 		Reply:       &north.CreatePostReply{InReplyToPostID: "post-1"},
 		QuotePostID: "quoted",
+		Poll:        &north.CreatePoll{Options: []string{"yes", "no"}, DurationMinutes: 60},
 	})
 	if err != nil || created.ID != "post-2" {
 		t.Fatalf("CreatePost = %#v, %v", created, err)
