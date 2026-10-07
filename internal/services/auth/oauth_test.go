@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,7 +54,19 @@ func TestStartOAuthUsesDeviceAuthorization(t *testing.T) {
 	if form.Get("client_id") != "client-id" || form.Get("client_secret") != "" {
 		t.Fatalf("OAuth client form = %#v", form)
 	}
-	for _, scope := range []string{"posts.read", "posts.write", "notifications.read", "dm.read"} {
+	for _, scope := range []string{
+		"posts.read",
+		"posts.write",
+		"follows.write",
+		"moderation.read",
+		"moderation.write",
+		"bookmarks.write",
+		"lists.read",
+		"media.write",
+		"notifications.read",
+		"dm.read",
+		"dm.write",
+	} {
 		if !strings.Contains(form.Get("scope"), scope) {
 			t.Errorf("OAuth scope %q is missing from %q", scope, form.Get("scope"))
 		}
@@ -76,5 +89,37 @@ func TestOAuthClientID(t *testing.T) {
 	}
 	if got := manager.oauthClientID(); got != "override-client" {
 		t.Fatalf("overridden client ID = %q", got)
+	}
+}
+
+func TestOAuthCredentialReportsNewScopes(t *testing.T) {
+	t.Parallel()
+
+	required := RequiredOAuthScopes()
+	credential := OAuthCredential{
+		ClientID: "client-id",
+		Token:    oauth2.Token{AccessToken: "access-token"},
+		Scopes:   append([]string(nil), required[:len(required)-2]...),
+	}
+	if missing := credential.MissingScopes(); !slices.Equal(missing, required[len(required)-2:]) {
+		t.Fatalf("missing scopes = %#v", missing)
+	}
+	credential.Scopes = required
+	if credential.NeedsAuthorization() {
+		t.Fatalf("current credential needs authorization: %#v", credential.MissingScopes())
+	}
+}
+
+func TestGrantedScopesUsesTokenResponse(t *testing.T) {
+	t.Parallel()
+
+	token := (&oauth2.Token{AccessToken: "access-token"}).WithExtra(map[string]any{
+		"scope": "users.read posts.read",
+	})
+	if got := grantedScopes(token, []string{"fallback"}); !slices.Equal(got, []string{"users.read", "posts.read"}) {
+		t.Fatalf("granted scopes = %#v", got)
+	}
+	if got := grantedScopes(&oauth2.Token{}, []string{"users.read"}); !slices.Equal(got, []string{"users.read"}) {
+		t.Fatalf("fallback scopes = %#v", got)
 	}
 }

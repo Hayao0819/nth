@@ -19,24 +19,71 @@ var oauthScopes = []north.Scope{
 	north.ScopePostsWrite,
 	north.ScopePostsEdit,
 	north.ScopePostsDelete,
+	north.ScopePollsVote,
 	north.ScopeReactionsWrite,
+	north.ScopeFollowsWrite,
+	north.ScopeModerationRead,
+	north.ScopeModerationWrite,
 	north.ScopeBookmarksRead,
+	north.ScopeBookmarksWrite,
+	north.ScopeProfileWrite,
 	north.ScopeNotificationsRead,
 	north.ScopeNotificationsWrite,
 	north.ScopeTrendsRead,
+	north.ScopeTrendsWrite,
+	north.ScopeListsRead,
+	north.ScopeListsWrite,
+	north.ScopeMediaWrite,
+	north.ScopeDraftsRead,
+	north.ScopeDraftsWrite,
+	north.ScopePostsSchedule,
 	north.ScopeDMRead,
+	north.ScopeDMWrite,
 	north.ScopeDMReceiptsWrite,
+	north.ScopeDMDelete,
+	north.ScopeDMConversationsWrite,
+	north.ScopeDMRequestsWrite,
 }
 
 // OAuthCredential is the refreshable public-API credential stored by nth.
 type OAuthCredential struct {
 	ClientID string       `json:"clientId"`
 	Token    oauth2.Token `json:"token"`
+	Scopes   []string     `json:"scopes,omitempty"`
 }
 
 func (c OAuthCredential) Valid() bool {
 	return strings.TrimSpace(c.ClientID) != "" &&
 		(strings.TrimSpace(c.Token.AccessToken) != "" || strings.TrimSpace(c.Token.RefreshToken) != "")
+}
+
+// MissingScopes returns permissions required by this version of nth that were
+// not recorded when the credential was issued.
+func (c OAuthCredential) MissingScopes() []string {
+	granted := make(map[string]struct{}, len(c.Scopes))
+	for _, scope := range c.Scopes {
+		granted[strings.TrimSpace(scope)] = struct{}{}
+	}
+	missing := make([]string, 0, len(oauthScopes))
+	for _, scope := range oauthScopes {
+		name := string(scope)
+		if _, ok := granted[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+
+	return missing
+}
+
+// NeedsAuthorization reports whether nth now requires permissions that are
+// absent from the saved authorization metadata.
+func (c OAuthCredential) NeedsAuthorization() bool {
+	return c.Valid() && len(c.MissingScopes()) > 0
+}
+
+// RequiredOAuthScopes returns the permissions requested by this version of nth.
+func RequiredOAuthScopes() []string {
+	return scopeNames(oauthScopes)
 }
 
 // OAuthPrompt contains the values displayed while device authorization is in progress.
@@ -74,7 +121,11 @@ func (s *deviceOAuthSession) Wait(ctx context.Context) (OAuthCredential, error) 
 		return OAuthCredential{}, fmt.Errorf("complete north sign-in: %w", err)
 	}
 
-	return OAuthCredential{ClientID: s.clientID, Token: *token}, nil
+	return OAuthCredential{
+		ClientID: s.clientID,
+		Token:    *token,
+		Scopes:   grantedScopes(token, s.config.Scopes),
+	}, nil
 }
 
 // StartOAuth begins north's device authorization flow.
@@ -116,6 +167,13 @@ func (m *Manager) SaveOAuthToken(clientID string, token *oauth2.Token) error {
 	if !credential.Valid() {
 		return errors.New("save OAuth token: invalid credential")
 	}
+	existing, available, err := m.loadOAuth()
+	if err != nil {
+		return err
+	}
+	if available && existing.ClientID == credential.ClientID {
+		credential.Scopes = append([]string(nil), existing.Scopes...)
+	}
 
 	return m.saveOAuth(credential)
 }
@@ -156,4 +214,30 @@ func newOAuthConfig(clientID string) *oauth2.Config {
 // OAuthConfig returns the OAuth configuration used by nth.
 func OAuthConfig(clientID string) *oauth2.Config {
 	return newOAuthConfig(clientID)
+}
+
+func scopeNames(scopes []north.Scope) []string {
+	names := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		names = append(names, string(scope))
+	}
+
+	return names
+}
+
+func grantedScopes(token *oauth2.Token, requested []string) []string {
+	if token != nil {
+		switch granted := token.Extra("scope").(type) {
+		case string:
+			if scopes := strings.Fields(granted); len(scopes) > 0 {
+				return scopes
+			}
+		case []string:
+			if len(granted) > 0 {
+				return append([]string(nil), granted...)
+			}
+		}
+	}
+
+	return append([]string(nil), requested...)
 }

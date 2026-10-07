@@ -25,79 +25,6 @@ const (
 	imagesEntry  = "north-terminal-images"
 )
 
-// Method identifies the credential most recently configured by setup.
-type Method string
-
-const (
-	MethodBrowser  Method = "browser"
-	MethodAPIToken Method = "api-token"
-	MethodOAuth    Method = "oauth"
-)
-
-func (m Method) Valid() bool {
-	return m == MethodBrowser || m == MethodAPIToken || m == MethodOAuth
-}
-
-// Settings contains the values collected by initial setup.
-type Settings struct {
-	Method  Method
-	Token   string
-	OAuth   OAuthCredential
-	Browser Profile
-	Images  bool
-
-	apiTokenFromEnvironment bool
-}
-
-func (s Settings) HasAPIToken() bool {
-	return strings.TrimSpace(s.Token) != ""
-}
-
-func (s Settings) HasBrowser() bool {
-	return s.Browser.Valid()
-}
-
-func (s Settings) HasOAuth() bool {
-	return s.OAuth.Valid()
-}
-
-// PreferOAuth reports whether the selected OAuth login should be used instead
-// of an API token stored in the keyring.
-func (s Settings) PreferOAuth() bool {
-	return s.Method == MethodOAuth && s.HasOAuth() && !s.apiTokenFromEnvironment
-}
-
-// HasEnvironmentToken reports whether NORTH_API_KEY supplied the API token.
-func (s Settings) HasEnvironmentToken() bool {
-	return s.apiTokenFromEnvironment
-}
-
-// Complete reports whether at least one authentication method is configured.
-func (s Settings) Complete() bool {
-	return s.HasAPIToken() || s.HasOAuth() || s.HasBrowser()
-}
-
-// CookieSource identifies where the current browser session came from.
-type CookieSource uint8
-
-const (
-	CookieUnavailable CookieSource = iota
-	CookieBrowser
-	CookieKeyring
-)
-
-// CookieStatus reports the result of refreshing the cached browser session.
-type CookieStatus struct {
-	Source CookieSource
-	Header string
-	Err    error
-}
-
-// ResetResult reports settings outside nth's system keyring.
-type ResetResult struct {
-	Environment []string
-}
-
 // Manager reads credentials from the system keyring and local browsers.
 type Manager struct {
 	vault       vault
@@ -243,6 +170,9 @@ func (m *Manager) Save(settings Settings) error {
 		if !settings.OAuth.Valid() {
 			return errors.New("sign in to north with OAuth")
 		}
+		if settings.OAuth.NeedsAuthorization() {
+			return errors.New("authorize the additional north permissions")
+		}
 		if err := m.saveOAuth(settings.OAuth); err != nil {
 			return err
 		}
@@ -284,62 +214,4 @@ func (m *Manager) Reset() (ResetResult, error) {
 	}
 
 	return result, nil
-}
-
-// RefreshCookie reloads north.rip cookies from the selected browser. If that
-// fails, it checks the last cookie saved for the same browser profile.
-func (m *Manager) RefreshCookie(ctx context.Context, profile Profile) CookieStatus {
-	header, browserErr := m.browsers.CookieHeader(ctx, profile)
-	if browserErr == nil && !validCookieHeader(header) {
-		browserErr = errNorthCookiesNotFound
-	}
-	if browserErr == nil {
-		cached := savedCookie{Profile: profile, Header: header}
-		encoded, err := json.Marshal(cached)
-		if err == nil {
-			err = m.vault.Set(cookieEntry, string(encoded))
-		}
-		if err != nil {
-			return CookieStatus{Source: CookieBrowser, Header: header, Err: fmt.Errorf("save browser cookies in keyring: %w", err)}
-		}
-
-		return CookieStatus{Source: CookieBrowser, Header: header}
-	}
-
-	encoded, cacheErr := m.vault.Get(cookieEntry)
-	if cacheErr != nil {
-		if errors.Is(cacheErr, errNotFound) {
-			return CookieStatus{Source: CookieUnavailable, Err: browserErr}
-		}
-
-		return CookieStatus{Source: CookieUnavailable, Err: errors.Join(browserErr, fmt.Errorf("read saved cookies from keyring: %w", cacheErr))}
-	}
-
-	var cached savedCookie
-	if err := json.Unmarshal([]byte(encoded), &cached); err != nil {
-		return CookieStatus{Source: CookieUnavailable, Err: errors.Join(browserErr, fmt.Errorf("decode saved cookies: %w", err))}
-	}
-	if !cached.Profile.Same(profile) || !validCookieHeader(cached.Header) {
-		return CookieStatus{Source: CookieUnavailable, Err: browserErr}
-	}
-
-	return CookieStatus{Source: CookieKeyring, Header: cached.Header, Err: browserErr}
-}
-
-type savedCookie struct {
-	Profile Profile `json:"profile"`
-	Header  string  `json:"cookie"`
-}
-
-func validCookieHeader(header string) bool {
-	if strings.TrimSpace(header) == "" {
-		return false
-	}
-	for _, char := range header {
-		if char < ' ' || char == 0x7f {
-			return false
-		}
-	}
-
-	return true
 }

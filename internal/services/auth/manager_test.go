@@ -67,6 +67,7 @@ func TestManagerSavesAndLoadsOAuth(t *testing.T) {
 			RefreshToken: "refresh-token",
 			Expiry:       time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC),
 		},
+		Scopes: RequiredOAuthScopes(),
 	}
 	profile := Profile{Browser: "firefox", Name: "default-release"}
 	if err := manager.Save(Settings{Method: MethodOAuth, OAuth: want, Browser: profile}); err != nil {
@@ -76,7 +77,7 @@ func TestManagerSavesAndLoadsOAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.Method != MethodOAuth || !settings.HasOAuth() || !settings.PreferOAuth() || settings.Token != "saved-api-token" || settings.OAuth.ClientID != want.ClientID || settings.OAuth.Token.RefreshToken != want.Token.RefreshToken || !settings.OAuth.Token.Expiry.Equal(want.Token.Expiry) || !settings.Browser.Same(profile) {
+	if settings.Method != MethodOAuth || !settings.HasOAuth() || !settings.PreferOAuth() || settings.OAuthNeedsAuthorization() || settings.Token != "saved-api-token" || settings.OAuth.ClientID != want.ClientID || settings.OAuth.Token.RefreshToken != want.Token.RefreshToken || !settings.OAuth.Token.Expiry.Equal(want.Token.Expiry) || !settings.Browser.Same(profile) {
 		t.Fatalf("loaded settings = %#v", settings)
 	}
 
@@ -88,7 +89,7 @@ func TestManagerSavesAndLoadsOAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.OAuth.Token.AccessToken != "new-access" || settings.OAuth.Token.RefreshToken != "new-refresh" {
+	if settings.OAuth.Token.AccessToken != "new-access" || settings.OAuth.Token.RefreshToken != "new-refresh" || settings.OAuth.NeedsAuthorization() {
 		t.Fatalf("rotated OAuth token = %#v", settings.OAuth.Token)
 	}
 
@@ -105,6 +106,29 @@ func TestManagerSavesAndLoadsOAuth(t *testing.T) {
 	}
 	if settings.PreferOAuth() || !settings.HasEnvironmentToken() || settings.Token != "environment-api-token" {
 		t.Fatalf("environment override settings = %#v", settings)
+	}
+}
+
+func TestLegacyOAuthCredentialNeedsAuthorizationWhenActive(t *testing.T) {
+	t.Parallel()
+
+	credential := OAuthCredential{
+		ClientID: "client-id",
+		Token:    oauth2.Token{AccessToken: "access-token"},
+	}
+	settings := Settings{Method: MethodOAuth, OAuth: credential}
+	if !credential.NeedsAuthorization() || !settings.OAuthNeedsAuthorization() {
+		t.Fatalf("legacy OAuth was accepted: %#v", settings)
+	}
+	manager := &Manager{vault: newMemoryVault(), getenv: func(string) string { return "" }}
+	if err := manager.Save(settings); err == nil || !strings.Contains(err.Error(), "additional") {
+		t.Fatalf("saving legacy OAuth returned %v", err)
+	}
+
+	settings.Token = "api-token"
+	settings.apiTokenFromEnvironment = true
+	if settings.OAuthNeedsAuthorization() {
+		t.Fatal("unused OAuth forced authorization despite NORTH_API_KEY")
 	}
 }
 
