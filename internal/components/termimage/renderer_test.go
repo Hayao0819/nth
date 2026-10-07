@@ -3,6 +3,7 @@ package termimage
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/png"
@@ -135,13 +136,36 @@ func TestResolveURLAcceptsNorthMediaPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := resolved.String(), "https://north.rip/media/2026/10/photo.jpg"; got != want {
+	if got, want := resolved.String(), "https://api.north.rip/media/2026/10/photo.jpg"; got != want {
 		t.Fatalf("resolved URL = %q, want %q", got, want)
 	}
 	for _, value := range []string{"media/photo.jpg", "//example.com/photo.jpg", "file:///tmp/photo.jpg"} {
 		if _, err := resolveURL(value); err == nil {
 			t.Errorf("resolveURL(%q) succeeded", value)
 		}
+	}
+}
+
+func TestRendererDecodesWebP(t *testing.T) {
+	t.Parallel()
+
+	data, err := base64.StdEncoding.DecodeString("UklGRrIBAABXRUJQVlA4TKUBAAAvSsAYAA8w//M///MfeJAkbXvaSG7m8Q3GfYSBJekwQztm/IcZlgwnmWImn2BK7aFmBtnVir6q//8VOkFE/xm4baTIu8c48ArEo6+B3zFKYln3pqClSCKX0begFTAXFOLXHSyF8cCNcZEG4OywuA4KVVfJCiArU7GAgJI8+lJP/OKMT/fBAjevg1cYB7YVkFuWga2lyPi5I0HFy5YTpWIHg0RZpkniRVW9odHAKOwosWuOGdxIyn2OvaCDvhg/we6TwadPBPbqBV58MsLmMJ8yZnOWk8SRz4N+QoyPL+MnamzMvcE1rHNEr91F9GKZPVUcS9w7PhhH36suB9qPeYb/oLk6cuTiJ0wOK3m5h1cKjW6EVZCYMK7dxcKCBdgP9HkKr9gkAO2P8GKZGWVdIAatQa+1IDpt6qyorVwdy01xdW8Jkfk6xjEXmVQQ+HQdFr6OKhIN34dXWq0+0qr6EJSCeeVLH9+gvGTLyqM65PQ44ihzlTXxQKjKbAvshXgir7Lil9w4L2bvMycmjQcqXaMCO6BlY28i+FOLzbfI1vEqxAhotocAAA==")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "image/webp")
+		_, _ = writer.Write(data)
+	}))
+	defer server.Close()
+
+	renderer := &Renderer{enabled: true, client: server.Client(), entries: make(map[string]entry)}
+	_, view, err := renderer.fetch(context.Background(), server.URL, 1, 4, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view == "" {
+		t.Fatal("WebP image rendered no fallback view")
 	}
 }
 
@@ -153,7 +177,7 @@ func TestFetchResolvesNorthMediaPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if got, want := request.URL.String(), "https://north.rip/media/avatar.png"; got != want {
+		if got, want := request.URL.String(), "https://api.north.rip/media/avatar.png"; got != want {
 			t.Errorf("request URL = %q, want %q", got, want)
 		}
 

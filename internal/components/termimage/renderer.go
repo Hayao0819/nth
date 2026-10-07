@@ -21,11 +21,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/ansi/kitty"
+	_ "golang.org/x/image/webp"
 )
 
 const (
-	maxDownload = 12 << 20
-	northOrigin = "https://north.rip"
+	maxDownload    = 12 << 20
+	northAPIOrigin = "https://api.north.rip"
 
 	AvatarColumns = 2
 	AvatarRows    = 1
@@ -294,7 +295,7 @@ func resolveURL(rawURL string) (*url.URL, error) {
 	if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") {
 		return nil, errors.New("invalid image URL")
 	}
-	base, err := url.Parse(northOrigin)
+	base, err := url.Parse(northAPIOrigin)
 	if err != nil {
 		return nil, err
 	}
