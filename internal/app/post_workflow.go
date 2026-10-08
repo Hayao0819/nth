@@ -8,6 +8,7 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
+	"github.com/Hayao0819/nth/internal/domain"
 	postfeature "github.com/Hayao0819/nth/internal/features/post"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
@@ -32,7 +33,7 @@ func (r *root) compose(ctx *reactea.Ctx, replyTo, quote *north.Post) tea.Cmd {
 	return modal.PushAt(ctx, composer, dialog.Placement(ctx, 72, 16))
 }
 
-func (r *root) edit(ctx *reactea.Ctx, post north.Post) tea.Cmd {
+func (r *root) edit(ctx *reactea.Ctx, post north.Post, etag string) tea.Cmd {
 	if r.editing {
 		r.notice = "A post is already being updated"
 
@@ -46,10 +47,15 @@ func (r *root) edit(ctx *reactea.Ctx, post north.Post) tea.Cmd {
 	}
 
 	key := "edit:" + target.ID
-	draft := r.drafts[key]
-	composer := dialog.NewEdit(r.theme, *target, draft.Text).
-		SetMediaAPI(r.media).
-		RestoreMediaIDs(draft.MediaIDs)
+	composer := dialog.NewEdit(r.theme, *target).
+		SetMediaAPI(r.media)
+	if draft, ok := r.drafts[key]; ok {
+		composer.RestoreEditDraft(draft.Text, draft.MediaIDs, draft.EditBase)
+		if draft.EditETag != "" {
+			etag = draft.EditETag
+		}
+	}
+	composer.SetEditETag(etag)
 
 	return modal.PushAt(ctx, composer, dialog.Placement(ctx, 72, 16))
 }
@@ -138,7 +144,7 @@ func (r *root) handlePostAction(ctx *reactea.Ctx, action postcomponent.Action, p
 			return nil
 		}
 
-		return r.edit(ctx, post)
+		return r.edit(ctx, post, "")
 	case postcomponent.Delete:
 		if !r.ownsPost(post) {
 			r.notice = "Only your own posts can be deleted"
@@ -180,7 +186,7 @@ func (r *root) toggleBookmark(ctx context.Context, post *north.Post) tea.Cmd {
 	}
 }
 
-func (r *root) editPost(ctx context.Context, id, text string, mediaIDs []string) tea.Cmd {
+func (r *root) editPost(ctx context.Context, edit domain.PostEdit) tea.Cmd {
 	if r.editing {
 		return nil
 	}
@@ -197,9 +203,9 @@ func (r *root) editPost(ctx context.Context, id, text string, mediaIDs []string)
 	r.failureJob = ""
 
 	return func() tea.Msg {
-		response, err := editor.EditPost(ctx, id, text, mediaIDs)
+		post, response, err := editor.EditPost(ctx, edit)
 
-		return postEditedMsg{target: r, postID: id, text: text, resp: response, err: err}
+		return postEditedMsg{target: r, postID: edit.ID, text: edit.Text, post: post, resp: response, err: err}
 	}
 }
 
@@ -244,6 +250,7 @@ func (r *root) rememberDraft(key string, draft dialog.Submission) {
 		return
 	}
 	draft.MediaIDs = append([]string(nil), draft.MediaIDs...)
+	draft.EditBase.Media = append([]north.Media(nil), draft.EditBase.Media...)
 	draft.Poll = clonePoll(draft.Poll)
 	draft.ThreadItems = cloneThreadItems(draft.ThreadItems)
 	r.drafts[key] = draft

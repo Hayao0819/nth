@@ -97,7 +97,9 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		d.editable = loaded.err == nil && loaded.eligible
 		if loaded.err == nil {
 			d.post = loaded.post
+			d.editETag = loaded.etag
 		} else {
+			d.editETag = ""
 			d.notice = "Editing unavailable: " + ui.FriendlyError(loaded.err)
 		}
 

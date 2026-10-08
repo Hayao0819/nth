@@ -16,6 +16,7 @@ type localPostState struct {
 	bookmark *bool
 	text     *string
 	editedAt *time.Time
+	media    *[]north.Media
 }
 
 func (f *Feed) SetBookmarked(id string, bookmarked bool) {
@@ -110,6 +111,32 @@ func (f *Feed) UpdatePost(ctx *reactea.Ctx, id, text string, editedAt time.Time)
 	f.ensureVisible(ctx.Width(), ctx.Height())
 }
 
+func (f *Feed) ReplacePost(ctx *reactea.Ctx, id string, post north.Post) {
+	updated := post.DisplayPost()
+	if updated == nil || updated.ID != id {
+		return
+	}
+	text := updated.Text
+	media := append([]north.Media(nil), updated.Media...)
+	state := f.localState[id]
+	state.text = &text
+	if updated.EditedAt != nil {
+		editedAt := *updated.EditedAt
+		state.editedAt = &editedAt
+	}
+	state.media = &media
+	f.localState[id] = state
+	for index := range f.posts {
+		target := f.posts[index].DisplayPost()
+		if target == nil || target.ID != id {
+			continue
+		}
+		*target = *updated
+		target.Media = append([]north.Media(nil), updated.Media...)
+	}
+	f.ensureVisible(ctx.Width(), ctx.Height())
+}
+
 func (f *Feed) CurrentMode() Mode { return f.mode }
 
 func (f *Feed) SearchQuery() string { return f.query }
@@ -193,6 +220,9 @@ func (f *Feed) applyLocalState(posts []north.Post) []north.Post {
 			if state.editedAt != nil {
 				edited := *state.editedAt
 				target.EditedAt = &edited
+			}
+			if state.media != nil {
+				target.Media = append([]north.Media(nil), (*state.media)...)
 			}
 		}
 		result = append(result, post)

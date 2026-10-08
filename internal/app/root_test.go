@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -938,7 +939,12 @@ func TestNotificationsAreHiddenWithoutNotificationAPI(t *testing.T) {
 func TestOwnEligiblePostCanBeEdited(t *testing.T) {
 	t.Parallel()
 
-	service := &editorAppAPI{fakeAPI: &fakeAPI{me: north.User{ID: "user-1", Handle: "user1", Name: "User 1"}}, eligible: true}
+	editable := testPost("1", "first")
+	editable.Media = []north.Media{{ID: "media-1", Kind: north.MediaPhoto}}
+	service := &editorAppAPI{
+		fakeAPI: &fakeAPI{me: north.User{ID: "user-1", Handle: "user1", Name: "User 1"}},
+		post:    editable, eligible: true, etag: `"version-1"`,
+	}
 	root := newRoot(service)
 	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
 	program.Start()
@@ -955,12 +961,66 @@ func TestOwnEligiblePostCanBeEdited(t *testing.T) {
 		testkit.SendKeys(program, "backspace")
 	}
 	testkit.SendKeys(program, "u", "p", "d", "a", "t", "e", "d", "ctrl+s")
-	if len(service.edits) != 1 || service.edits[0].id != "1" || service.edits[0].text != "updated" {
+	if len(service.edits) != 1 || service.edits[0].id != "1" || service.edits[0].text != "updated" ||
+		!slices.Equal(service.edits[0].mediaIDs, []string{"media-1"}) || service.edits[0].etag != `"version-1"` ||
+		service.edits[0].baseText != "first" || !slices.Equal(service.edits[0].baseMediaIDs, []string{"media-1"}) {
 		t.Fatalf("edit calls = %#v", service.edits)
 	}
 	post := root.feed.SelectedPost()
 	if post == nil || post.Text != "updated" || post.EditedAt == nil {
 		t.Fatalf("edited timeline post = %#v", post)
+	}
+}
+
+func TestPostEditFailureIsVisibleOnThePostPage(t *testing.T) {
+	t.Parallel()
+
+	service := &editorAppAPI{
+		fakeAPI: &fakeAPI{me: north.User{ID: "user-1", Handle: "user1", Name: "User 1"}},
+		post:    testPost("1", "first"), eligible: true, etag: `"version-1"`,
+		editErr: errors.New("edit refused"),
+	}
+	root := newRoot(service)
+	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
+	program.Start()
+
+	testkit.SendKeys(program, "enter", "e")
+	for range len("first") {
+		testkit.SendKeys(program, "backspace")
+	}
+	testkit.SendKeys(program, "u", "p", "d", "a", "t", "e", "d", "ctrl+s")
+	plain := testkit.Plain(program)
+	if !strings.Contains(plain, "Update failed") || !strings.Contains(plain, "edit refused") {
+		t.Fatalf("post page hid the edit failure:\n%s", plain)
+	}
+	if _, ok := root.drafts["edit:1"]; !ok {
+		t.Fatal("failed edit was not retained as a draft")
+	}
+}
+
+func TestPostEditConflictRefreshesTheRetainedDraftBaseline(t *testing.T) {
+	t.Parallel()
+
+	root := newRoot(&fakeAPI{})
+	root.drafts["edit:1"] = dialog.Submission{
+		Text: "my draft", EditID: "1", EditETag: `"version-1"`,
+		EditBase: testPost("1", "original"),
+	}
+	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
+	program.Start()
+
+	latest := testPost("1", "changed elsewhere")
+	latest.Media = []north.Media{{ID: "media-2", Kind: north.MediaPhoto}}
+	root.handlePostEdited(program.Ctx(), postEditedMsg{
+		target: root, postID: "1", post: latest,
+		resp: &north.Response{Header: map[string][]string{"Etag": {`"version-2"`}}},
+		err:  errors.New("post changed in another client"),
+	})
+
+	draft := root.drafts["edit:1"]
+	if draft.Text != "my draft" || draft.EditBase.Text != "changed elsewhere" ||
+		draft.EditETag != `"version-2"` || len(draft.EditBase.Media) != 1 || draft.EditBase.Media[0].ID != "media-2" {
+		t.Fatalf("refreshed draft = %#v", draft)
 	}
 }
 
@@ -1057,24 +1117,48 @@ func (a *notificationAppAPI) MarkNotificationsRead(context.Context) (int, *north
 }
 
 type editCall struct {
-	id   string
-	text string
+	id           string
+	text         string
+	mediaIDs     []string
+	etag         string
+	baseText     string
+	baseMediaIDs []string
 }
 
 type editorAppAPI struct {
 	*fakeAPI
 	eligible bool
+	post     north.Post
+	etag     string
+	editErr  error
 	edits    []editCall
 }
 
-func (a *editorAppAPI) EditablePost(_ context.Context, id string) (north.Post, bool, *north.Response, error) {
-	return testPost(id, "first"), a.eligible, a.response(), nil
+func (a *editorAppAPI) EditablePost(_ context.Context, id string) (north.Post, bool, string, *north.Response, error) {
+	post := a.post
+	if post.ID == "" {
+		post = testPost(id, "first")
+	}
+
+	return post, a.eligible, a.etag, a.response(), nil
 }
 
-func (a *editorAppAPI) EditPost(_ context.Context, id, text string, _ []string) (*north.Response, error) {
-	a.edits = append(a.edits, editCall{id: id, text: text})
+func (a *editorAppAPI) EditPost(_ context.Context, edit domain.PostEdit) (north.Post, *north.Response, error) {
+	baseMediaIDs := make([]string, 0, len(edit.Base.Media))
+	for _, media := range edit.Base.Media {
+		baseMediaIDs = append(baseMediaIDs, media.ID)
+	}
+	a.edits = append(a.edits, editCall{
+		id: edit.ID, text: edit.Text, mediaIDs: append([]string(nil), edit.MediaIDs...), etag: edit.ETag,
+		baseText: edit.Base.Text, baseMediaIDs: baseMediaIDs,
+	})
+	post := a.post
+	if post.ID == "" {
+		post = testPost(edit.ID, edit.Text)
+	}
+	post.Text = edit.Text
 
-	return a.response(), nil
+	return post, a.response(), a.editErr
 }
 
 func postPointer(post north.Post) *north.Post { return &post }

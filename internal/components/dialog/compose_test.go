@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +59,24 @@ func TestComposeCountMatchesTheSubmittedValue(t *testing.T) {
 	program.Start()
 	if plain := testkit.Plain(program); !strings.Contains(plain, "281/280") {
 		t.Fatalf("compose counter ignored submitted whitespace:\n%s", plain)
+	}
+}
+
+func TestEditDraftRestorationDistinguishesAnEmptyDraft(t *testing.T) {
+	t.Parallel()
+
+	compose := NewEdit(ui.NewTheme(), north.Post{
+		ID:    "post-1",
+		Text:  "original",
+		Media: []north.Media{{ID: "media-1", Kind: north.MediaPhoto}},
+	})
+	if compose.input.Widget.Value() != "original" || !slices.Equal(compose.mediaIDs, []string{"media-1"}) {
+		t.Fatalf("initial edit state = text %q media %#v", compose.input.Widget.Value(), compose.mediaIDs)
+	}
+
+	compose.RestoreEditDraft("", []string{"media-2"}, north.Post{ID: "post-1", Text: "original"}).SetEditETag(`"version-1"`)
+	if compose.input.Widget.Value() != "" || !slices.Equal(compose.mediaIDs, []string{"media-2"}) || !compose.restored || compose.editETag != `"version-1"` {
+		t.Fatalf("restored edit state = text %q media %#v restored %v etag %q", compose.input.Widget.Value(), compose.mediaIDs, compose.restored, compose.editETag)
 	}
 }
 

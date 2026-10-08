@@ -31,6 +31,7 @@ type officialSpy struct {
 	relationshipCalls   []string
 	threadItems         []north.ThreadItem
 	editRequest         north.EditPostRequest
+	editETag            string
 	tokenKind           north.TokenKind
 }
 
@@ -39,7 +40,9 @@ func (s *officialSpy) TokenKind() north.TokenKind { return s.tokenKind }
 func (s *officialSpy) Post(context.Context, string) (north.Post, *north.Response, error) {
 	s.postCalls++
 
-	return north.Post{ID: "official-post", EditEligible: true}, nil, nil
+	return north.Post{ID: "official-post", EditEligible: true}, &north.Response{
+		Header: http.Header{"Etag": {`"version-1"`}},
+	}, nil
 }
 
 func (s *officialSpy) Bookmarks(context.Context, string) (north.BookmarkPage, *north.Response, error) {
@@ -69,6 +72,14 @@ func (s *officialSpy) Conversation(context.Context, string, string) (north.Conve
 func (s *officialSpy) EditPost(_ context.Context, _ string, request north.EditPostRequest) (north.Post, *north.Response, error) {
 	s.editCalls++
 	s.editRequest = request
+
+	return north.Post{ID: "official-post"}, nil, nil
+}
+
+func (s *officialSpy) EditPostIfMatch(_ context.Context, _ string, request north.EditPostRequest, etag string) (north.Post, *north.Response, error) {
+	s.editCalls++
+	s.editRequest = request
+	s.editETag = etag
 
 	return north.Post{ID: "official-post"}, nil, nil
 }
@@ -270,15 +281,20 @@ func TestHybridPrefersOfficialForSupportedFeatures(t *testing.T) {
 	if err != nil || conversation.Post.ID != "official-conversation" {
 		t.Fatalf("PostConversation = %#v, %v", conversation, err)
 	}
-	post, eligible, _, err := client.EditablePost(context.Background(), "post-1")
-	if err != nil || !eligible || post.ID != "official-post" {
-		t.Fatalf("EditablePost = %#v, %t, %v", post, eligible, err)
+	post, eligible, etag, _, err := client.EditablePost(context.Background(), "post-1")
+	if err != nil || !eligible || post.ID != "official-post" || etag != `"version-1"` {
+		t.Fatalf("EditablePost = %#v, %t, %q, %v", post, eligible, etag, err)
 	}
-	if _, err := client.EditPost(context.Background(), "post-1", "updated", []string{"media-1"}); err != nil {
+	if _, _, err := client.EditPost(context.Background(), domain.PostEdit{
+		ID: "post-1", Text: "updated", MediaIDs: []string{"media-1"}, ETag: etag,
+	}); err != nil {
 		t.Fatalf("EditPost: %v", err)
 	}
 	if official.editRequest.Text == nil || *official.editRequest.Text != "updated" || official.editRequest.MediaIDs == nil || len(*official.editRequest.MediaIDs) != 1 || (*official.editRequest.MediaIDs)[0] != "media-1" {
 		t.Fatalf("edit request = %#v", official.editRequest)
+	}
+	if official.editETag != `"version-1"` {
+		t.Fatalf("edit ETag = %q", official.editETag)
 	}
 	dmConversations, _, err := client.DMConversations(context.Background(), "", false)
 	if err != nil || len(dmConversations.Items) != 1 || dmConversations.Items[0].ID != "official-dm" {
@@ -491,7 +507,7 @@ func TestHybridUsesWebForScopedFeaturesWithLegacyToken(t *testing.T) {
 	if err != nil || len(trends) != 1 || trends[0].Tag != "web-trend" {
 		t.Fatalf("Trends = %#v, %v", trends, err)
 	}
-	if _, err := client.EditPost(context.Background(), "post-1", "updated", nil); err != nil {
+	if _, _, err := client.EditPost(context.Background(), domain.PostEdit{ID: "post-1", Text: "updated"}); err != nil {
 		t.Fatalf("EditPost: %v", err)
 	}
 	if official.bookmarkCalls != 0 || official.dmConversationCalls != 0 || official.trendCalls != 0 || official.editCalls != 0 {

@@ -20,6 +20,8 @@ type Submission struct {
 	ReplyTo     string
 	QuoteID     string
 	EditID      string
+	EditETag    string
+	EditBase    north.Post
 	MediaIDs    []string
 	Poll        *north.CreatePoll
 	ThreadItems []north.ThreadItem
@@ -36,6 +38,8 @@ type Compose struct {
 	problem     string
 	restored    bool
 	editID      string
+	editETag    string
+	editBase    north.Post
 	mediaIDs    []string
 	media       []north.Media
 	mediaAPI    domain.MediaAPI
@@ -49,14 +53,11 @@ type Compose struct {
 	threadable  bool
 }
 
-func NewEdit(theme ui.Theme, post north.Post, draft string) *Compose {
-	text := draft
-	if text == "" {
-		text = post.Text
-	}
-	compose := NewCompose(theme, nil, nil, text)
+func NewEdit(theme ui.Theme, post north.Post) *Compose {
+	compose := NewCompose(theme, nil, nil, post.Text)
 	compose.editID = post.ID
-	compose.restored = draft != "" && draft != post.Text
+	compose.editBase = cloneEditBase(post)
+	compose.restored = false
 	for _, media := range post.Media {
 		if media.ID != "" {
 			compose.mediaIDs = append(compose.mediaIDs, media.ID)
@@ -65,6 +66,23 @@ func NewEdit(theme ui.Theme, post north.Post, draft string) *Compose {
 	}
 
 	return compose
+}
+
+func (d *Compose) RestoreEditDraft(text string, mediaIDs []string, base north.Post) *Compose {
+	d.input.Widget.SetValue(text)
+	d.mediaIDs = append([]string(nil), mediaIDs...)
+	if base.ID != "" {
+		d.editBase = cloneEditBase(base)
+	}
+	d.restored = true
+
+	return d
+}
+
+func (d *Compose) SetEditETag(etag string) *Compose {
+	d.editETag = etag
+
+	return d
 }
 
 func NewCompose(theme ui.Theme, replyTo, quote *north.Post, draft string) *Compose {
@@ -155,6 +173,8 @@ func (d *Compose) send(ctx *reactea.Ctx) tea.Cmd {
 			ReplyTo:  postID(d.replyTo),
 			QuoteID:  postID(d.quote),
 			EditID:   d.editID,
+			EditETag: d.editETag,
+			EditBase: cloneEditBase(d.editBase),
 			MediaIDs: append([]string(nil), d.mediaIDs...),
 			Poll:     clonePoll(d.poll),
 		}
@@ -177,6 +197,8 @@ func (d *Compose) cancel(ctx *reactea.Ctx) tea.Cmd {
 		ReplyTo:     postID(d.replyTo),
 		QuoteID:     postID(d.quote),
 		EditID:      d.editID,
+		EditETag:    d.editETag,
+		EditBase:    cloneEditBase(d.editBase),
 		MediaIDs:    append([]string(nil), d.mediaIDs...),
 		Poll:        clonePoll(d.poll),
 		ThreadItems: cloneThreadItems(d.thread),
@@ -194,6 +216,12 @@ func postID(post *north.Post) string {
 	}
 
 	return post.ID
+}
+
+func cloneEditBase(post north.Post) north.Post {
+	post.Media = append([]north.Media(nil), post.Media...)
+
+	return post
 }
 
 func northTextLength(value string) int {

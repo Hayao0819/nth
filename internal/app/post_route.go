@@ -90,10 +90,12 @@ func (p *postRoutePage) load(ctx *reactea.Ctx) tea.Cmd {
 	})
 }
 
-func (p *postRoutePage) UpdatePost(id, text string, editedAt time.Time) {
+func (p *postRoutePage) HandlePostEdit(ctx context.Context, id, text string, editedAt time.Time, err error) tea.Cmd {
 	if p.page != nil {
-		p.page.UpdatePost(id, text, editedAt)
+		return p.page.HandlePostEdit(ctx, id, text, editedAt, err)
 	}
+
+	return nil
 }
 
 var _ reactea.Component = (*postRoutePage)(nil)

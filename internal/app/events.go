@@ -11,6 +11,7 @@ import (
 	"github.com/Hayao0819/nth/internal/components/sessiondialog"
 	"github.com/Hayao0819/nth/internal/domain"
 	notificationfeature "github.com/Hayao0819/nth/internal/features/notification"
+	postfeature "github.com/Hayao0819/nth/internal/features/post"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -115,6 +116,13 @@ func (r *root) handleEvent(ctx *reactea.Ctx, event tea.Msg) (tea.Cmd, bool) {
 
 	case navigation.MessagesReadMsg:
 		return r.loadDMUnread(ctx), true
+
+	case postfeature.EditRequestMsg:
+		if r.timelineInputCaptured(ctx) {
+			return nil, true
+		}
+
+		return r.edit(ctx, msg.Post, msg.ETag), true
 
 	case postcomponent.ActionMsg:
 		if r.timelineInputCaptured(ctx) {

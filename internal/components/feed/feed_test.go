@@ -272,6 +272,36 @@ func TestLatePageCannotUndoLocalChanges(t *testing.T) {
 	}
 }
 
+func TestEditedPostReplacesMediaAndSurvivesAStalePage(t *testing.T) {
+	t.Parallel()
+
+	feed := New(&fakeAPI{}, ui.NewTheme())
+	stale := testPost("1", "stale")
+	stale.Media = []north.Media{{ID: "old-media", Kind: north.MediaPhoto}}
+	feed.posts = []north.Post{stale}
+	feed.seq = 4
+	program := reactea.New(feed, reactea.WithSize(60, 8))
+
+	editedAt := time.Now()
+	updated := testPost("1", "updated")
+	updated.EditedAt = &editedAt
+	updated.Media = []north.Media{{ID: "new-media", Kind: north.MediaPhoto}}
+	feed.ReplacePost(program.Ctx(), "1", updated)
+	if target := feed.posts[0].DisplayPost(); target.Text != "updated" || len(target.Media) != 1 || target.Media[0].ID != "new-media" {
+		t.Fatalf("updated post = %#v", target)
+	}
+
+	program.Send(feedLoadedMsg{
+		target: feed,
+		seq:    4,
+		page:   north.PostPage{Items: []north.Post{stale}},
+	})
+	target := feed.posts[0].DisplayPost()
+	if target.Text != "updated" || target.EditedAt == nil || len(target.Media) != 1 || target.Media[0].ID != "new-media" {
+		t.Fatalf("stale page replaced the edited post: %#v", target)
+	}
+}
+
 func TestLatestPagePreservesTheTailCursor(t *testing.T) {
 	t.Parallel()
 

@@ -28,6 +28,7 @@ type Screen struct {
 	notice           string
 	manage           bool
 	editable         bool
+	editETag         string
 	checkingEditable bool
 	editableChecked  bool
 	confirmingDelete bool

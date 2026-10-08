@@ -230,14 +230,20 @@ func TestScreenShowsEditOnlyWhenThePostIsEligible(t *testing.T) {
 	t.Parallel()
 
 	post := north.Post{ID: "post-1", Text: "editable", Author: north.User{ID: "me", Handle: "alice"}}
-	editor := &screenEditor{post: post, eligible: true}
+	editor := &screenEditor{post: post, eligible: true, etag: `"version-1"`}
+	screen := NewPageWithEditor(nil, editor, ui.NewTheme(), post, true)
 	program := reactea.New(
-		NewPageWithEditor(nil, editor, ui.NewTheme(), post, true),
+		screen,
 		reactea.WithSize(72, 16),
 	)
 	program.Start()
 	if plain := testkit.Plain(program); !strings.Contains(plain, "e  Edit") || !strings.Contains(plain, "d  Delete") {
 		t.Fatalf("management actions are incomplete:\n%s", plain)
+	}
+	command := screen.Update(program.Ctx(), testkit.Key("e"))
+	request, ok := command().(EditRequestMsg)
+	if !ok || request.Post.ID != "post-1" || request.ETag != `"version-1"` {
+		t.Fatalf("edit request = %#v", request)
 	}
 }
 
@@ -480,6 +486,7 @@ func (a *screenConversationAPI) PostConversation(_ context.Context, _ string, cu
 type screenEditor struct {
 	post     north.Post
 	eligible bool
+	etag     string
 }
 
 type screenPollAPI struct {
@@ -496,12 +503,12 @@ func (a *screenPollAPI) VotePoll(_ context.Context, postID, optionID string) (no
 	return north.Post{ID: postID, Poll: &north.Poll{ViewerOptionID: &optionID}}, nil, nil
 }
 
-func (e *screenEditor) EditablePost(context.Context, string) (north.Post, bool, *north.Response, error) {
-	return e.post, e.eligible, nil, nil
+func (e *screenEditor) EditablePost(context.Context, string) (north.Post, bool, string, *north.Response, error) {
+	return e.post, e.eligible, e.etag, nil, nil
 }
 
-func (e *screenEditor) EditPost(context.Context, string, string, []string) (*north.Response, error) {
-	return nil, nil
+func (e *screenEditor) EditPost(context.Context, conversationdomain.PostEdit) (north.Post, *north.Response, error) {
+	return north.Post{}, nil, nil
 }
 
 func (a *screenPostAPI) Post(_ context.Context, id string) (north.Post, *north.Response, error) {

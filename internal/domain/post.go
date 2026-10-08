@@ -20,3 +20,11 @@ type PollAPI interface {
 type ThreadAPI interface {
 	CreateThread(context.Context, []north.ThreadItem) ([]north.Post, *north.Response, error)
 }
+
+type PostEdit struct {
+	ID       string
+	Text     string
+	MediaIDs []string
+	ETag     string
+	Base     north.Post
+}

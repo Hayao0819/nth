@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
+	"github.com/Hayao0819/nth/internal/domain"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -32,6 +34,7 @@ type postEditedMsg struct {
 	target *root
 	postID string
 	text   string
+	post   north.Post
 	resp   *north.Response
 	err    error
 }
@@ -47,7 +50,7 @@ type bookmarkChangedMsg struct {
 func (m bookmarkChangedMsg) Response() *north.Response { return m.response }
 
 type postUpdateTarget interface {
-	UpdatePost(string, string, time.Time)
+	HandlePostEdit(context.Context, string, string, time.Time, error) tea.Cmd
 }
 
 func (r *root) handlePostCreated(ctx *reactea.Ctx, msg postCreatedMsg) tea.Cmd {
@@ -106,32 +109,62 @@ func (r *root) handlePostEdited(ctx *reactea.Ctx, msg postEditedMsg) tea.Cmd {
 	}
 	r.editing = false
 	r.setResponse(msg.resp)
+	editedAt := time.Now()
+	text := msg.text
+	updated := msg.post.DisplayPost()
+	if updated != nil && updated.ID == msg.postID {
+		text = updated.Text
+		if updated.EditedAt != nil {
+			editedAt = *updated.EditedAt
+		} else {
+			updated.EditedAt = &editedAt
+		}
+	}
+	var pageCommand tea.Cmd
+	if detail, ok := r.currentPage().(postUpdateTarget); ok {
+		pageCommand = detail.HandlePostEdit(ctx.Context(), msg.postID, text, editedAt, msg.err)
+	}
 	if msg.err != nil {
+		if updated != nil && updated.ID == msg.postID && msg.resp != nil && msg.resp.Header.Get("ETag") != "" {
+			if draft, ok := r.drafts["edit:"+msg.postID]; ok {
+				draft.EditBase = *updated
+				draft.EditBase.Media = append([]north.Media(nil), updated.Media...)
+				draft.EditETag = msg.resp.Header.Get("ETag")
+				r.drafts["edit:"+msg.postID] = draft
+			}
+		}
 		r.problem, r.notice = msg.err, ""
 		r.postFailed = true
 		r.failureJob = "Update"
 
-		return nil
+		return pageCommand
 	}
 	r.problem = nil
 	r.postFailed = false
 	r.failureJob = ""
 	r.notice = "Post updated"
 	delete(r.drafts, "edit:"+msg.postID)
-	editedAt := time.Now()
-	r.feed.UpdatePost(ctx, msg.postID, msg.text, editedAt)
-	if cached, ok := r.posts[msg.postID]; ok {
+	if updated == nil || updated.ID != msg.postID {
+		r.feed.UpdatePost(ctx, msg.postID, text, editedAt)
+	} else {
+		r.feed.ReplacePost(ctx, msg.postID, msg.post)
+	}
+	if updated != nil && updated.ID == msg.postID {
+		if cached, ok := r.posts[msg.postID]; ok && cached.RepostOf != nil {
+			clone := msg.post
+			cached.RepostOf = &clone
+			r.posts[msg.postID] = cached
+		} else {
+			r.posts[msg.postID] = msg.post
+		}
+	} else if cached, ok := r.posts[msg.postID]; ok {
 		if target := cached.DisplayPost(); target != nil {
-			target.Text = msg.text
+			target.Text = text
 			target.EditedAt = &editedAt
 			r.posts[msg.postID] = cached
 		}
 	}
-	if detail, ok := r.currentPage().(postUpdateTarget); ok {
-		detail.UpdatePost(msg.postID, msg.text, editedAt)
-	}
-
-	return nil
+	return pageCommand
 }
 
 func (r *root) handleBookmarkChanged(ctx *reactea.Ctx, msg bookmarkChangedMsg) tea.Cmd {
@@ -184,7 +217,13 @@ func (r *root) handleSubmission(ctx *reactea.Ctx, result modal.Result[dialog.Sub
 		return nil
 	}
 	if submission.EditID != "" {
-		return r.editPost(ctx.Context(), submission.EditID, submission.Text, submission.MediaIDs)
+		return r.editPost(ctx.Context(), domain.PostEdit{
+			ID:       submission.EditID,
+			Text:     submission.Text,
+			MediaIDs: append([]string(nil), submission.MediaIDs...),
+			ETag:     submission.EditETag,
+			Base:     submission.EditBase,
+		})
 	}
 
 	return r.submit(ctx.Context(), submission)

@@ -1,8 +1,6 @@
 package post
 
 import (
-	"time"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	"github.com/Hayao0819/nth/internal/components/dialog"
@@ -78,7 +76,10 @@ func (d *Screen) request(ctx *reactea.Ctx, action postcomponent.Action) tea.Cmd 
 			return nil
 		}
 
-		return postcomponent.Request(postcomponent.Edit, d.post)
+		post := d.post
+		etag := d.editETag
+
+		return func() tea.Msg { return EditRequestMsg{Post: post, ETag: etag} }
 	}
 	if action == postcomponent.Delete {
 		if !d.manage || d.confirmingDelete {
@@ -130,13 +131,4 @@ func (d *Screen) requestNextUser(ctx *reactea.Ctx) tea.Cmd {
 	}
 
 	return d.requestUser(ctx, users[d.linkedUser])
-}
-
-func (d *Screen) UpdatePost(id, text string, editedAt time.Time) {
-	target := d.post.DisplayPost()
-	if target == nil || target.ID != id {
-		return
-	}
-	target.Text = text
-	target.EditedAt = &editedAt
 }
