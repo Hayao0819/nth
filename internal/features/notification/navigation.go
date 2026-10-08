@@ -37,6 +37,7 @@ func (d *Screen) setTab(ctx context.Context, tab north.NotificationTab) tea.Cmd 
 	d.items = nil
 	d.nextCursor = nil
 	d.selected, d.top = 0, 0
+	d.fillLoads = 0
 	d.notice = ""
 	d.err = nil
 
@@ -58,9 +59,19 @@ func (d *Screen) ensureVisible(width, room int) {
 }
 
 func (d *Screen) itemPositionAt(row, width, room int) (int, int, bool) {
-	return listview.ItemPositionAt(d.top, len(d.items), row, room, func(index int) int {
-		return lipgloss.Height(d.renderItem(d.items[index], width, index == d.selected))
-	})
+	if row < 0 || row >= room {
+		return 0, 0, false
+	}
+	offset := 0
+	for index := d.top; index < len(d.items) && offset < room; index++ {
+		height := lipgloss.Height(d.renderItem(d.items[index], width, index == d.selected))
+		if row >= offset && row < offset+height {
+			return index, row - offset, true
+		}
+		offset += height
+	}
+
+	return 0, 0, false
 }
 
 func (d *Screen) open() tea.Cmd {

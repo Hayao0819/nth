@@ -22,11 +22,11 @@ func (d *Screen) Render(ctx *reactea.Ctx) string {
 	lines := make([]string, 0, room)
 	used := 0
 	for index := d.top; index < len(d.items); index++ {
-		card := d.renderItem(d.items[index], innerWidth, index == d.selected)
-		cardHeight := lipgloss.Height(card)
-		if used+cardHeight > room {
+		if used >= room {
 			break
 		}
+		card := d.renderItem(d.items[index], innerWidth, index == d.selected)
+		cardHeight := lipgloss.Height(card)
 		lines = append(lines, card)
 		used += cardHeight
 	}
@@ -69,6 +69,15 @@ func (d *Screen) innerWidth(width int) int {
 
 func (d *Screen) bodyTop() int {
 	return pageheader.Height + 1
+}
+
+func (d *Screen) renderedHeight(width int) int {
+	height := 0
+	for index := d.top; index < len(d.items); index++ {
+		height += lipgloss.Height(d.renderItem(d.items[index], width, index == d.selected))
+	}
+
+	return height
 }
 
 func (d *Screen) renderTabs(width int) string {

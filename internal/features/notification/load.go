@@ -12,6 +12,8 @@ import (
 	"github.com/Hayao0819/reactea/v2"
 )
 
+const maxFillLoads = 3
+
 type PageLoadedMsg struct {
 	target   *Screen
 	page     notificationdomain.NotificationPage
@@ -99,13 +101,18 @@ func (d *Screen) applyPageLoaded(ctx *reactea.Ctx, msg PageLoadedMsg) tea.Cmd {
 	if msg.err != nil {
 		return nil
 	}
+	added := len(msg.page.Items)
 	if msg.more {
+		before := len(d.items)
 		d.items = collection.AppendUniqueBy(d.items, msg.page.Items, func(item notificationdomain.NotificationItem) string {
 			return item.ID
 		})
+		added = len(d.items) - before
+		d.fillLoads++
 	} else {
 		d.items = append([]notificationdomain.NotificationItem(nil), msg.page.Items...)
 		d.selected, d.top = 0, 0
+		d.fillLoads = 0
 	}
 	if d.markedRead {
 		for index := range d.items {
@@ -113,13 +120,18 @@ func (d *Screen) applyPageLoaded(ctx *reactea.Ctx, msg PageLoadedMsg) tea.Cmd {
 		}
 	}
 	d.nextCursor = msg.page.NextCursor
-	d.ensureVisible(d.innerWidth(ctx.Width()), d.room(ctx.Height()))
+	width, room := d.innerWidth(ctx.Width()), d.room(ctx.Height())
+	d.ensureVisible(width, room)
 	imageCommand := d.loadImages(ctx.Context(), msg.page.Items)
+	commands := []tea.Cmd{imageCommand}
 	if !msg.more && !d.markedRead {
-		return tea.Batch(imageCommand, d.markRead(ctx.Context()))
+		commands = append(commands, d.markRead(ctx.Context()))
+	}
+	if d.nextCursor != nil && d.fillLoads < maxFillLoads && (!msg.more || added > 0) && d.renderedHeight(width) < room {
+		commands = append(commands, d.load(ctx.Context(), true))
 	}
 
-	return imageCommand
+	return tea.Batch(commands...)
 }
 
 func (d *Screen) applyRead(msg ReadMsg) {

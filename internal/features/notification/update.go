@@ -40,7 +40,13 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 
 		return nil
 	case tea.WindowSizeMsg:
-		return d.loadImages(ctx.Context(), d.items)
+		d.fillLoads = 0
+		images := d.loadImages(ctx.Context(), d.items)
+		if d.nextCursor != nil && !d.loading && d.renderedHeight(d.innerWidth(ctx.Width())) < d.room(ctx.Height()) {
+			return tea.Batch(images, d.load(ctx.Context(), true))
+		}
+
+		return images
 	case tea.MouseClickMsg:
 		return d.handleClick(ctx, msg)
 	}

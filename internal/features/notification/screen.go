@@ -25,6 +25,7 @@ type Screen struct {
 	top         int
 	loading     bool
 	loadingMore bool
+	fillLoads   int
 	err         error
 	notice      string
 	markedRead  bool

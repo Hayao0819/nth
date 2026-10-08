@@ -116,6 +116,63 @@ func TestPageLoadsMarksReadAndPaginates(t *testing.T) {
 	}
 }
 
+func TestInitialLoadFetchesEnoughNotificationsForTheViewport(t *testing.T) {
+	t.Parallel()
+
+	next := "next"
+	first := notificationdomain.NotificationItem{
+		ID: "first", Kind: notificationdomain.NotificationFollow,
+		Actors: []north.User{{Name: "First", Handle: "first"}},
+	}
+	more := make([]notificationdomain.NotificationItem, 6)
+	for index := range more {
+		more[index] = notificationdomain.NotificationItem{
+			ID: string(rune('a' + index)), Kind: notificationdomain.NotificationFollow,
+			Actors: []north.User{{Name: "More", Handle: "more"}},
+		}
+	}
+	api := &notificationAPI{pages: map[string]notificationdomain.NotificationPage{
+		"":     {Items: []notificationdomain.NotificationItem{first}, NextCursor: &next},
+		"next": {Items: more},
+	}}
+	page := NewPage(api, ui.NewTheme())
+	program := reactea.New(page, reactea.WithSize(70, 18))
+	program.Start()
+
+	if got := strings.Join(api.calls, ","); got != ",next" {
+		t.Fatalf("notification cursors = %q", got)
+	}
+	if len(page.items) != 7 {
+		t.Fatalf("loaded notifications = %d, want 7", len(page.items))
+	}
+}
+
+func TestPartiallyVisibleNotificationFillsAndUsesTheLastRow(t *testing.T) {
+	t.Parallel()
+
+	screen := NewPage(nil, ui.NewTheme())
+	screen.items = []notificationdomain.NotificationItem{
+		{ID: "first", Kind: notificationdomain.NotificationFollow, Actors: []north.User{{Name: "Alice", Handle: "alice"}}},
+		{ID: "second", Kind: notificationdomain.NotificationFollow, Actors: []north.User{{Name: "Bob", Handle: "bob"}}},
+	}
+	program := reactea.New(screen, reactea.WithSize(70, 8))
+	program.Start()
+	plain := testkit.Plain(program)
+	if !strings.Contains(plain, "Bob") {
+		t.Fatalf("partially visible notification left the final body row blank:\n%s", plain)
+	}
+
+	bob := testkit.Find(program, "Bob")
+	if len(bob) == 0 {
+		t.Fatal("partially visible notification has no hit target")
+	}
+	command := screen.Update(program.Ctx(), tea.MouseClickMsg{X: bob[0].X, Y: bob[0].Y, Button: tea.MouseLeft})
+	opened, ok := command().(navigation.OpenUserMsg)
+	if !ok || opened.User.Handle != "bob" {
+		t.Fatalf("open partially visible notification = %#v", opened)
+	}
+}
+
 func TestPageConcealsNotificationPost(t *testing.T) {
 	t.Parallel()
 
