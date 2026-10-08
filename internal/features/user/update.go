@@ -7,12 +7,24 @@ import (
 	"github.com/Hayao0819/nth/internal/components/pageheader"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
 	"github.com/Hayao0819/nth/internal/domain"
+	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
 
 func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	innerWidth, room := d.layout(ctx.Width(), ctx.Height())
+	if opened, ok := msg.(navigation.BrowserOpenedMsg); ok && opened.URL == d.browserURL() {
+		d.profileBusy = false
+		d.profileUpdateErr = opened.Err
+		if opened.Err != nil {
+			d.profileNotice = "Could not open browser: " + ui.FriendlyError(opened.Err)
+		} else {
+			d.profileNotice = "Opened in browser"
+		}
+
+		return nil
+	}
 	if result, ok := msg.(modal.Result[domain.ProfileUpdate]); ok {
 		if result.Ok() {
 			return d.saveProfile(ctx.Context(), result.Value)
@@ -58,6 +70,8 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	switch {
 	case reactea.Key(msg, "esc", "left"):
 		return pageheader.Back()
+	case reactea.Key(msg, "w"):
+		return d.openBrowser()
 	case reactea.Key(msg, "tab"):
 		return d.cycleTab(ctx.Context())
 	case reactea.Key(msg, "j", "down"):
@@ -142,6 +156,9 @@ func (d *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg, innerWidth
 	x, y, inside := reactea.Mouse(ctx, msg)
 	if !inside || msg.Button != tea.MouseLeft {
 		return nil
+	}
+	if pageheader.ActionAt(d.theme, x, y, innerWidth, d.browserAction()) {
+		return d.openBrowser()
 	}
 	if pageheader.BackAt(x, y) {
 		return pageheader.Back()

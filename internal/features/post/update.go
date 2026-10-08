@@ -15,6 +15,15 @@ import (
 func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	innerWidth, room := d.layout(ctx.Width(), ctx.Height())
 	scrollStep := max(1, room/2)
+	if opened, ok := msg.(navigation.BrowserOpenedMsg); ok && opened.URL == d.browserURL() {
+		if opened.Err != nil {
+			d.notice = "Could not open browser: " + ui.FriendlyError(opened.Err)
+		} else {
+			d.notice = "Opened in browser"
+		}
+
+		return nil
+	}
 	if choice, ok := msg.(modal.Result[pollChoice]); ok {
 		if choice.Ok() {
 			return d.vote(ctx.Context(), choice.Value.OptionID)
@@ -162,6 +171,9 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		if !inside || msg.Button != tea.MouseLeft {
 			return nil
 		}
+		if pageheader.ActionAt(d.theme, x, y, innerWidth, d.browserAction()) {
+			return d.openBrowser()
+		}
 		if pageheader.BackAt(x, y) {
 			return pageheader.Back()
 		}
@@ -192,6 +204,8 @@ func (d *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	switch {
 	case reactea.Key(msg, "esc", "left"):
 		return pageheader.Back()
+	case reactea.Key(msg, "w"):
+		return d.openBrowser()
 	case reactea.Key(msg, "enter") && d.replyFocused:
 		if reply := d.selectedReply(); reply != nil {
 			selected := *reply

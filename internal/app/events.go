@@ -100,6 +100,12 @@ func (r *root) handleEvent(ctx *reactea.Ctx, event tea.Msg) (tea.Cmd, bool) {
 	case navigation.OpenAccountSafetyMsg:
 		return r.openAccountSafety(ctx), true
 
+	case navigation.OpenBrowserMsg:
+		return r.openBrowser(msg.URL), true
+
+	case navigation.BrowserOpenedMsg:
+		return r.handleBrowserOpened(ctx, msg), true
+
 	case navigation.ProfileUpdatedMsg:
 		user := msg.User
 		r.me = &user

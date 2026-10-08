@@ -45,6 +45,22 @@ func (d *Screen) requestActivity(activity navigation.PostActivity) tea.Cmd {
 	return navigation.OpenPostActivity(d.post, activity)
 }
 
+func (d *Screen) browserURL() string {
+	return navigation.PostWebURL(d.post)
+}
+
+func (d *Screen) browserAction() string {
+	if d.browserURL() == "" {
+		return ""
+	}
+
+	return navigation.BrowserActionLabel
+}
+
+func (d *Screen) openBrowser() tea.Cmd {
+	return navigation.OpenBrowser(d.browserURL())
+}
+
 func (d *Screen) request(ctx *reactea.Ctx, action postcomponent.Action) tea.Cmd {
 	if action == postcomponent.ViewAuthor {
 		target := d.post.DisplayPost()

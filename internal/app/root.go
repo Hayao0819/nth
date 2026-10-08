@@ -10,6 +10,7 @@ import (
 	"github.com/Hayao0819/nth/internal/components/feed"
 	"github.com/Hayao0819/nth/internal/components/termimage"
 	"github.com/Hayao0819/nth/internal/domain"
+	browserservice "github.com/Hayao0819/nth/internal/services/browser"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/layout"
@@ -44,6 +45,7 @@ type root struct {
 	threads         domain.ThreadAPI
 	trendAPI        trendAPI
 	trendDismiss    trendDismissAPI
+	openURL         func(string) error
 	images          *termimage.Renderer
 	theme           ui.Theme
 	feed            *feed.Feed
@@ -116,6 +118,7 @@ func newRootWithServices(api API, trends trendAPI, images *termimage.Renderer) *
 	r := &root{
 		api:           api,
 		trendAPI:      trends,
+		openURL:       browserservice.Open,
 		images:        images,
 		theme:         theme,
 		feed:          feed,

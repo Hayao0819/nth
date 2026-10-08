@@ -125,6 +125,7 @@ func helpLines(theme ui.Theme, width int, notifications, messages, bookmarks boo
 		}},
 		{"POSTS", []helpItem{
 			{"Enter", "Open the selected post"},
+			{"w", "Open post or profile details in a browser"},
 			{"p", "Open the parent from a reply's details"},
 			{"u", "Open the selected post's author"},
 			{"U", "Open the next linked account (reply, repost, or quote)"},

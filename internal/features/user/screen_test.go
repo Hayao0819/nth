@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/testkit"
@@ -99,6 +101,28 @@ func TestPageLoadsAndRendersProfile(t *testing.T) {
 	}
 	if width, height := lipgloss.Size(program.View().Content); width != 64 || height != 28 {
 		t.Fatalf("profile size = %dx%d", width, height)
+	}
+}
+
+func TestPageOpensProfileInBrowser(t *testing.T) {
+	t.Parallel()
+
+	screen := NewPage(nil, ui.NewTheme(), north.User{Handle: "alice", Name: "Alice"})
+	program := reactea.New(screen, reactea.WithSize(64, 16))
+	program.Start()
+	if plain := testkit.Plain(program); !strings.Contains(plain, navigation.BrowserActionLabel) {
+		t.Fatalf("browser action is missing:\n%s", plain)
+	}
+
+	for name, message := range map[string]tea.Msg{
+		"keyboard": testkit.Key("w"),
+		"mouse":    tea.MouseClickMsg{X: 63, Y: 1, Button: tea.MouseLeft},
+	} {
+		command := screen.Update(program.Ctx(), message)
+		opened, ok := command().(navigation.OpenBrowserMsg)
+		if !ok || opened.URL != "https://north.rip/alice" {
+			t.Errorf("%s browser request = %#v", name, opened)
+		}
 	}
 }
 

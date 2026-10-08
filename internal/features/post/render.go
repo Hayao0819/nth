@@ -47,7 +47,7 @@ func (d *Screen) Render(ctx *reactea.Ctx) string {
 		title = "Conversation"
 	}
 	titleRight += " · " + d.theme.Dim.Render("Esc/← back")
-	header := pageheader.Render(d.theme, title, titleRight, innerWidth)
+	header := pageheader.RenderWithAction(d.theme, title, titleRight, d.browserAction(), innerWidth)
 	body := ""
 	if offset < end {
 		body = strings.Join(lines[offset:end], "\n")

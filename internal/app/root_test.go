@@ -69,6 +69,33 @@ func TestRootNavigationSearchAndCompose(t *testing.T) {
 	}
 }
 
+func TestPostAndProfileOpenInBrowser(t *testing.T) {
+	t.Parallel()
+
+	root := newRoot(&fakeAPI{})
+	opened := make(chan string, 2)
+	root.openURL = func(rawURL string) error {
+		opened <- rawURL
+
+		return nil
+	}
+	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
+	program.Start()
+
+	testkit.SendKeys(program, "enter", "w")
+	if got, want := <-opened, "https://north.rip/user1/status/1"; got != want {
+		t.Fatalf("post browser URL = %q, want %q", got, want)
+	}
+	if plain := testkit.Plain(program); !strings.Contains(plain, "Opened in browser") {
+		t.Fatalf("post browser result is missing:\n%s", plain)
+	}
+
+	testkit.SendKeys(program, "esc", "a", "w")
+	if got, want := <-opened, "https://north.rip/alice"; got != want {
+		t.Fatalf("profile browser URL = %q, want %q", got, want)
+	}
+}
+
 func TestOpeningHomeKeepsTheLoadedTimeline(t *testing.T) {
 	t.Parallel()
 

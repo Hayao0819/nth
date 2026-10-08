@@ -2,6 +2,7 @@ package post
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/go-north"
+	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
 	postcomponent "github.com/Hayao0819/nth/internal/components/post"
 	conversationdomain "github.com/Hayao0819/nth/internal/domain"
@@ -69,6 +71,36 @@ func TestScreenRendersPostDetails(t *testing.T) {
 	}
 	if width, height := lipgloss.Size(program.View().Content); width != 78 || height != 26 {
 		t.Errorf("screen size = %dx%d", width, height)
+	}
+}
+
+func TestScreenOpensPostInBrowser(t *testing.T) {
+	t.Parallel()
+
+	screen := NewPage(nil, ui.NewTheme(), north.Post{
+		ID: "post-1", Author: north.User{Handle: "alice"}, Text: "Open me",
+	}, false)
+	program := reactea.New(screen, reactea.WithSize(70, 16))
+	program.Start()
+	if plain := testkit.Plain(program); !strings.Contains(plain, navigation.BrowserActionLabel) {
+		t.Fatalf("browser action is missing:\n%s", plain)
+	}
+
+	for name, message := range map[string]tea.Msg{
+		"keyboard": testkit.Key("w"),
+		"mouse":    tea.MouseClickMsg{X: 69, Y: 1, Button: tea.MouseLeft},
+	} {
+		command := screen.Update(program.Ctx(), message)
+		opened, ok := command().(navigation.OpenBrowserMsg)
+		if !ok || opened.URL != "https://north.rip/alice/status/post-1" {
+			t.Errorf("%s browser request = %#v", name, opened)
+		}
+	}
+	screen.Update(program.Ctx(), navigation.BrowserOpenedMsg{
+		URL: "https://north.rip/alice/status/post-1", Err: errors.New("launcher unavailable"),
+	})
+	if plain := testkit.Plain(program); !strings.Contains(plain, "Could not open browser") {
+		t.Fatalf("browser error is missing:\n%s", plain)
 	}
 }
 

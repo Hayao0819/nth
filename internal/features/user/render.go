@@ -28,15 +28,21 @@ func (d *Screen) Render(ctx *reactea.Ctx) string {
 			right = d.theme.Active.Render(ui.Clip(d.profileNotice, max(1, innerWidth-12)))
 		}
 	}
-	header := pageheader.Render(d.theme, "Profile", right, innerWidth)
+	header := pageheader.RenderWithAction(d.theme, "Profile", right, d.browserAction(), innerWidth)
 	body := ""
 	if d.offset < end {
 		body = strings.Join(content.lines[d.offset:end], "\n")
 	}
 
 	footerLeft := ""
+	if d.browserURL() != "" {
+		footerLeft = "w browser"
+	}
 	if d.activity != nil {
-		footerLeft = "Tab posts/likes"
+		if footerLeft != "" {
+			footerLeft += " · "
+		}
+		footerLeft += "Tab posts/likes"
 	}
 	if len(d.relationshipKinds()) > 0 {
 		if footerLeft != "" {

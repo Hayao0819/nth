@@ -26,3 +26,20 @@ func TestRenderAndBackHitArea(t *testing.T) {
 		t.Fatal("Back did not return BackMsg")
 	}
 }
+
+func TestRenderWithActionKeepsActionVisibleAndClickable(t *testing.T) {
+	t.Parallel()
+
+	theme := ui.NewTheme()
+	header := RenderWithAction(theme, "Post", "A status message that may be clipped", "w  Browser ↗", 32)
+	plain := ansi.Strip(header)
+	if !strings.Contains(plain, "Post") || !strings.Contains(plain, "w  Browser ↗") {
+		t.Fatalf("header action is not visible:\n%s", plain)
+	}
+	if !ActionAt(theme, 31, 1, 32, "w  Browser ↗") || ActionAt(theme, 10, 1, 32, "w  Browser ↗") {
+		t.Fatal("header action hit area does not match the rendered action")
+	}
+	if ActionAt(theme, 31, Height, 32, "w  Browser ↗") {
+		t.Fatal("header action extends below the header")
+	}
+}
