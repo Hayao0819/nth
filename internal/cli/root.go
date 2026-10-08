@@ -122,8 +122,12 @@ func openSession(
 		notice   string
 		err      error
 	)
+	officialOptions := []north.Option{
+		north.WithUserAgent("nth/" + version),
+		north.WithHTTPClient(northapi.NewOfficialHTTPClient()),
+	}
 	if settings.HasAPIToken() && !settings.PreferOAuth() {
-		official, err = north.NewClient(settings.Token, north.WithUserAgent("nth/"+version))
+		official, err = north.NewClient(settings.Token, officialOptions...)
 		if err != nil {
 			return clientSession{}, err
 		}
@@ -137,7 +141,7 @@ func openSession(
 			func(token *oauth2.Token) error {
 				return credentials.SaveOAuthToken(settings.OAuth.ClientID, token)
 			},
-			north.WithUserAgent("nth/"+version),
+			officialOptions...,
 		)
 		if err != nil {
 			return clientSession{}, err
