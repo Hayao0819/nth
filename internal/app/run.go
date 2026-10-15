@@ -38,7 +38,7 @@ func Run(ctx context.Context, api API, options Options) error {
 		defer source.SetCookieRefreshHandler(nil)
 	}
 
-	if err := program.Run(tea.WithContext(ctx)); err != nil {
+	if err := program.Run(tea.WithContext(ctx), tea.WithInput(terminalInput())); err != nil {
 		return fmt.Errorf("run terminal client: %w", err)
 	}
 
