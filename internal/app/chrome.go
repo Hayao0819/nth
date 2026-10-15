@@ -25,6 +25,15 @@ type compactHeaderRenderKey struct {
 	handle string
 }
 
+type statusRenderKey struct {
+	progress      string
+	status        string
+	ratePresent   bool
+	rateLimit     int
+	rateRemaining int
+	notifications bool
+}
+
 func (h *timelineHeader) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 	click, ok := msg.(tea.MouseClickMsg)
 	if !ok || click.Button != tea.MouseLeft {
@@ -53,6 +62,25 @@ func (r *root) compactHeaderKey() compactHeaderRenderKey {
 	if r.me != nil {
 		key.name = r.me.Name
 		key.handle = r.me.Handle
+	}
+
+	return key
+}
+
+func (r *root) statusRenderKey() statusRenderKey {
+	progress := r.feed.Progress()
+	if progress == "" {
+		progress = r.feed.CurrentMode().Label(r.feed.SearchQuery())
+	}
+	key := statusRenderKey{
+		progress:      progress,
+		status:        r.styledStatus(),
+		notifications: r.notifications != nil,
+	}
+	if response := r.latestResponse(); response != nil {
+		key.ratePresent = response.RateLimit.Present
+		key.rateLimit = response.RateLimit.Limit
+		key.rateRemaining = response.RateLimit.Remaining
 	}
 
 	return key

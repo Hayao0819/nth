@@ -79,7 +79,7 @@ func (r *root) configureLayout(width, height int) {
 		r.main.SetItems(
 			layout.Fixed(wideSidebarWidth, r.sidebar).Key("navigation"),
 			layout.Grow(1, r.surface).Bounds(58, 0).Focusable().Key("surface"),
-			layout.Fixed(wideAsideWidth, r.aside).Key("aside"),
+			layout.Fixed(wideAsideWidth, r.asideView).Key("aside"),
 		)
 		r.view.SetItems(
 			layout.Spacer(left).Key("left-gutter"),

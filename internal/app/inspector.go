@@ -17,6 +17,38 @@ type inspector struct {
 	root *root
 }
 
+type inspectorRenderKey struct {
+	trends       [5]inspectorTrendKey
+	trendCount   int
+	trendBusy    bool
+	trendFailed  bool
+	trendDismiss bool
+	post         inspectorPostKey
+}
+
+type inspectorTrendKey struct {
+	tag       string
+	count     int
+	isHashtag bool
+}
+
+type inspectorPostKey struct {
+	present      bool
+	interactable bool
+	name         string
+	handle       string
+	text         string
+	hiddenReason string
+	media        int
+	replies      int
+	reposts      int
+	likes        int
+	deleted      bool
+	unavailable  bool
+	liked        bool
+	reposted     bool
+}
+
 type inspectorLayout struct {
 	content           string
 	searchFirst       int
@@ -108,6 +140,49 @@ func (i *inspector) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 
 func (i *inspector) Render(ctx *reactea.Ctx) string {
 	return i.build(ctx.Width(), ctx.Height()).content
+}
+
+func (i *inspector) renderKey() inspectorRenderKey {
+	r := i.root
+	key := inspectorRenderKey{
+		trendCount:   min(len(r.trends), 5),
+		trendBusy:    r.trendBusy,
+		trendFailed:  r.trendErr != nil,
+		trendDismiss: r.trendDismiss != nil,
+	}
+	for index, trend := range r.trends[:key.trendCount] {
+		key.trends[index] = inspectorTrendKey{
+			tag:       trend.Tag,
+			count:     trend.Count,
+			isHashtag: trend.IsHashtag,
+		}
+	}
+	post := r.feed.SelectedPost()
+	if post == nil {
+		return key
+	}
+	target := post.DisplayPost()
+	if target == nil {
+		return key
+	}
+	key.post = inspectorPostKey{
+		present:      true,
+		interactable: postcomponent.CanInteract(post),
+		name:         target.Author.Name,
+		handle:       target.Author.Handle,
+		text:         target.Text,
+		hiddenReason: string(target.HiddenReason),
+		media:        len(target.Media),
+		replies:      target.ReplyCount,
+		reposts:      target.RepostCount,
+		likes:        target.LikeCount,
+		deleted:      target.Deleted,
+		unavailable:  target.Unavailable,
+		liked:        target.Liked,
+		reposted:     target.Reposted,
+	}
+
+	return key
 }
 
 func (i *inspector) build(width, height int) inspectorLayout {

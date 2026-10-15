@@ -63,19 +63,21 @@ type root struct {
 	listItems       map[string]north.List
 	bookmarkItems   map[string]north.BookmarkFolder
 
-	compactHeader reactea.Component
-	compactFooter reactea.Component
-	timeline      reactea.Component
-	sidebar       reactea.Component
-	aside         reactea.Component
-	statusBar     reactea.Component
-	wide          bool
-	medium        bool
-	layoutSet     bool
-	layoutWidth   int
-	layoutHeight  int
-	contentLeft   int
-	contentWidth  int
+	compactHeader     reactea.Component
+	compactFooter     reactea.Component
+	timeline          reactea.Component
+	sidebar           reactea.Component
+	aside             reactea.Component
+	asideView         reactea.Component
+	statusBar         reactea.Component
+	backgroundVersion uint64
+	wide              bool
+	medium            bool
+	layoutSet         bool
+	layoutWidth       int
+	layoutHeight      int
+	contentLeft       int
+	contentWidth      int
 
 	me          *north.User
 	meErr       error
@@ -181,17 +183,23 @@ func newRootWithServices(api API, trends trendAPI, images *termimage.Renderer) *
 	r.compactHeader = layout.Memo(reactea.Func(r.renderHeader), func() any {
 		return r.compactHeaderKey()
 	})
-	r.compactFooter = reactea.Func(r.renderFooter)
+	r.compactFooter = layout.Memo(reactea.Func(r.renderFooter), func() any {
+		return r.statusRenderKey()
+	})
 	sidebar := &sidebar{root: r}
 	r.sidebar = layout.Memo(sidebar, func() any { return sidebar.renderKey() })
-	r.aside = &inspector{root: r}
-	r.statusBar = reactea.Func(r.renderStatusBar)
+	inspector := &inspector{root: r}
+	r.aside = inspector
+	r.asideView = layout.Memo(inspector, func() any { return inspector.renderKey() })
+	r.statusBar = layout.Memo(reactea.Func(r.renderStatusBar), func() any {
+		return r.statusRenderKey()
+	})
 	header := &timelineHeader{root: r}
 	r.timeline = layout.Framed(
 		theme.Column,
 		layout.Column(
 			layout.Fixed(3, layout.Memo(header, func() any {
-				return r.feed.CurrentMode()
+				return r.compactHeaderKey()
 			})),
 			layout.Grow(1, feed).Focusable(),
 		),
@@ -208,7 +216,8 @@ func newRootWithServices(api API, trends trendAPI, images *termimage.Renderer) *
 	r.pages = router.NewWithRoutes(r.pageRoutes())
 	r.surface = &pageSurface{root: r, pages: r.pages}
 	r.body = layout.Column()
-	r.Wrapper = reactea.Wrap(r.body)
+	background := layout.Memo(r.body, func() any { return r.backgroundVersion })
+	r.Wrapper = reactea.Wrap(background)
 	r.configureLayout(0, 0)
 
 	return r
@@ -228,6 +237,9 @@ func (r *root) Init(ctx *reactea.Ctx) tea.Cmd {
 }
 
 func (r *root) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
+	// Input is routed only to the active modal. Every message that reaches the
+	// root may change its background and therefore invalidates the cached frame.
+	r.backgroundVersion++
 	if _, resized := msg.(tea.WindowSizeMsg); resized {
 		r.configureLayout(ctx.Width(), ctx.Height())
 	}
