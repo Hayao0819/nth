@@ -1,11 +1,14 @@
 package message
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/Hayao0819/nth/internal/components/dialog"
 	"github.com/Hayao0819/nth/internal/components/navigation"
 	"github.com/Hayao0819/nth/internal/components/pageheader"
+	"github.com/Hayao0819/nth/internal/ui"
 	"github.com/Hayao0819/reactea/v2"
 	"github.com/Hayao0819/reactea/v2/modal"
 )
@@ -63,17 +66,36 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if msg.Button == tea.MouseWheelDown {
+			if s.current != nil && s.scrollMessage(3, ctx.Width(), s.room(ctx.Height())) {
+				return nil
+			}
 			s.move(1, ctx.Width(), s.room(ctx.Height()))
+			if s.current == nil {
+				return s.loadNearEdge(ctx.Context())
+			}
 
-			return s.loadNearEnd(ctx.Context())
+			return nil
 		}
 		if msg.Button == tea.MouseWheelUp {
+			if s.current != nil && s.scrollMessage(-3, ctx.Width(), s.room(ctx.Height())) {
+				return nil
+			}
 			s.move(-1, ctx.Width(), s.room(ctx.Height()))
+			if s.current != nil {
+				return s.loadNearEdge(ctx.Context())
+			}
 		}
+
+		return nil
+	case tea.WindowSizeMsg:
+		s.ensureVisible(ctx.Width(), s.room(ctx.Height()))
 
 		return nil
 	case tea.MouseClickMsg:
 		return s.handleClick(ctx, msg)
+	}
+	if s.composing && reactea.IsKeyboard(msg) {
+		return s.updateComposer(ctx, msg)
 	}
 
 	switch {
@@ -81,26 +103,38 @@ func (s *Screen) Update(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		return s.back()
 	case reactea.Key(msg, "j", "down"):
 		s.move(1, ctx.Width(), s.room(ctx.Height()))
-
-		return s.loadNearEnd(ctx.Context())
+		if s.current == nil {
+			return s.loadNearEdge(ctx.Context())
+		}
 	case reactea.Key(msg, "k", "up"):
 		s.move(-1, ctx.Width(), s.room(ctx.Height()))
+		if s.current != nil {
+			return s.loadNearEdge(ctx.Context())
+		}
 	case reactea.Key(msg, "g", "home"):
 		s.setIndex(0)
 		s.setTop(0)
+		if s.current != nil {
+			return s.loadNearEdge(ctx.Context())
+		}
 	case reactea.Key(msg, "G", "end"):
 		s.setIndex(max(0, s.itemCount()-1))
 		s.ensureVisible(ctx.Width(), s.room(ctx.Height()))
-
-		return s.loadNearEnd(ctx.Context())
+		if s.current == nil {
+			return s.loadNearEdge(ctx.Context())
+		}
+	case reactea.Key(msg, "ctrl+d", "pgdown", "space") && s.current != nil:
+		s.scrollMessage(max(1, s.room(ctx.Height())*2/3), ctx.Width(), s.room(ctx.Height()))
+	case reactea.Key(msg, "ctrl+u", "pgup") && s.current != nil:
+		s.scrollMessage(-max(1, s.room(ctx.Height())*2/3), ctx.Width(), s.room(ctx.Height()))
 	case reactea.Key(msg, "enter") && s.current == nil:
 		return s.openConversation(ctx.Context())
+	case reactea.Key(msg, "enter", "tab") && s.composerVisible():
+		return s.openComposer(ctx)
 	case reactea.Key(msg, "tab") && s.current == nil:
 		return s.toggleRequests(ctx.Context())
-	case reactea.Key(msg, "N") && s.current == nil:
+	case reactea.Key(msg, "m"):
 		return s.openRecipients(ctx, recipientConversation)
-	case reactea.Key(msg, "s") && s.current != nil && !s.current.Request:
-		return s.promptFor(ctx, promptMessage)
 	case reactea.Key(msg, "r") && s.current != nil && !s.current.Request:
 		return s.promptFor(ctx, promptReply)
 	case reactea.Key(msg, "e") && s.current != nil && !s.current.Request:
@@ -150,19 +184,38 @@ func (s *Screen) handleClick(ctx *reactea.Ctx, msg tea.MouseClickMsg) tea.Cmd {
 		return nil
 	}
 	if pageheader.BackAt(x, y) {
+		if s.composing {
+			return s.closeComposer()
+		}
+
 		return s.back()
+	}
+	if s.composerVisible() && y >= ctx.Height()-composerHeight {
+		if !s.composing {
+			return s.openComposer(ctx)
+		}
+		if y == ctx.Height()-1 {
+			button := s.composerButton()
+			if x >= max(0, ctx.Width()-lipgloss.Width(button)) {
+				return s.submitComposer(ctx)
+			}
+			if x < lipgloss.Width("Esc  Done") {
+				return s.closeComposer()
+			}
+		}
+
+		return s.composer.Widget.Focus()
 	}
 	if index, row, ok := s.itemPositionAt(y-pageheader.Height, ctx.Width(), s.room(ctx.Height())); ok {
 		s.setIndex(index)
 		if s.current == nil {
 			return s.openConversation(ctx.Context())
 		}
-		if row == 0 {
-			user := s.messages[index].Sender
-			label := messageSender(s.messages[index])
-			if user.Handle != "" && x >= 3 && x < 3+lipgloss.Width(label) {
-				return navigation.OpenUser(user)
-			}
+		user := s.messages[index].Sender
+		label := messageSender(s.messages[index])
+		lines := strings.Split(s.renderMessage(s.messages[index], ctx.Width(), true), "\n")
+		if user.Handle != "" && row < len(lines) && ui.TextAt(lines[row], x, label) {
+			return navigation.OpenUser(user)
 		}
 	}
 

@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
@@ -95,7 +96,13 @@ func (s *Screen) openConversation(ctx context.Context) tea.Cmd {
 	s.current = &conversation
 	s.messages = nil
 	s.messageCursor = nil
-	s.messageIndex, s.messageTop = 0, 0
+	s.messageIndex, s.messageTop, s.messageOffset = 0, 0, 0
+	s.messageAnchor = messageViewAnchor{}
+	s.composer.Widget.SetValue("")
+	s.composer.Widget.Blur()
+	s.composing = false
+	s.composerError = ""
+	s.submittedText = ""
 	s.err = nil
 	s.notice = ""
 
@@ -133,22 +140,74 @@ func (s *Screen) applyMessagesLoaded(ctx *reactea.Ctx, msg messagesLoadedMsg) {
 	s.loadingMore = false
 	s.err = msg.err
 	if msg.err != nil {
+		if !msg.more {
+			s.messageAnchor = messageViewAnchor{}
+		}
 		return
 	}
 	if msg.page.Conversation.ID != "" {
 		conversation := msg.page.Conversation
 		s.current = &conversation
 	}
+	incoming := append([]messagedomain.Message(nil), msg.page.Items...)
+	slices.Reverse(incoming)
 	if msg.more {
-		s.messages = collection.AppendUniqueBy(s.messages, msg.page.Items, func(message messagedomain.Message) string {
+		selectedID := ""
+		if selected := s.selectedMessage(); selected != nil {
+			selectedID = selected.ID
+		}
+		s.messages = collection.AppendUniqueBy(incoming, s.messages, func(message messagedomain.Message) string {
 			return message.ID
 		})
+		if selectedID != "" {
+			s.messageIndex = max(0, slices.IndexFunc(s.messages, func(message messagedomain.Message) bool {
+				return message.ID == selectedID
+			}))
+		}
 	} else {
-		s.messages = append([]messagedomain.Message(nil), msg.page.Items...)
-		s.messageIndex, s.messageTop = 0, 0
+		if s.messageAnchor.active {
+			s.messages = mergeRefreshedMessages(s.messages, incoming)
+		} else {
+			s.messages = incoming
+		}
+		if !s.restoreMessageView() {
+			s.messageIndex = max(0, len(s.messages)-1)
+			s.messageTop, s.messageOffset = 0, 0
+		}
 	}
 	s.messageCursor = msg.page.NextCursor
 	s.ensureVisible(ctx.Width(), s.room(ctx.Height()))
+}
+
+func mergeRefreshedMessages(current, refreshed []messagedomain.Message) []messagedomain.Message {
+	replacements := make(map[string]messagedomain.Message, len(refreshed))
+	for _, message := range refreshed {
+		if message.ID != "" {
+			replacements[message.ID] = message
+		}
+	}
+	result := make([]messagedomain.Message, 0, len(current)+len(refreshed))
+	for _, message := range current {
+		if replacement, ok := replacements[message.ID]; ok && message.ID != "" {
+			result = append(result, replacement)
+			delete(replacements, message.ID)
+		} else {
+			result = append(result, message)
+		}
+	}
+	for _, message := range refreshed {
+		if message.ID == "" {
+			result = append(result, message)
+			continue
+		}
+		if _, ok := replacements[message.ID]; !ok {
+			continue
+		}
+		result = append(result, message)
+		delete(replacements, message.ID)
+	}
+
+	return result
 }
 
 func (s *Screen) applyRead(msg readMsg) {

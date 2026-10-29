@@ -14,7 +14,6 @@ type promptKind uint8
 const (
 	promptNone promptKind = iota
 	promptConversation
-	promptMessage
 	promptReply
 	promptEdit
 	promptReaction
@@ -42,8 +41,6 @@ func (s *Screen) promptFor(ctx *reactea.Ctx, kind promptKind) tea.Cmd {
 	switch kind {
 	case promptConversation:
 		title, placeholder, button = "New message", "@alice, @bob", "Start"
-	case promptMessage:
-		title, placeholder, button, multiline = "New message", "Write a message", "Send", true
 	case promptReply:
 		message := s.selectedMessage()
 		if message == nil {
@@ -97,8 +94,6 @@ func (s *Screen) applyPrompt(ctx context.Context, text string) tea.Cmd {
 	switch kind {
 	case promptConversation:
 		return s.createConversation(ctx, parseHandles(text))
-	case promptMessage:
-		return s.sendMessage(ctx, text, "")
 	case promptReply:
 		return s.sendMessage(ctx, text, id)
 	case promptEdit:

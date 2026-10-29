@@ -33,6 +33,9 @@ func (s *Screen) Render(ctx *reactea.Ctx) string {
 	}
 	header := pageheader.Render(s.theme, title, right, width)
 	body := s.renderItems(width, room)
+	if s.composerVisible() {
+		return ui.Fit(header+"\n"+body+"\n"+s.renderComposer(ctx), width, height)
+	}
 	footer := "j/k move · Esc/← back"
 	if s.current == nil {
 		footer = "j/k move · Enter open"
@@ -40,13 +43,16 @@ func (s *Screen) Render(ctx *reactea.Ctx) string {
 			footer += " · Tab inbox/requests"
 		}
 		if s.write != nil {
-			footer += " · N new"
+			footer += " · m new"
 		}
 		footer += " · Esc/← back"
 	} else if s.current.Request {
 		footer = "j/k move · u profile"
 		if s.request != nil {
 			footer += " · y accept · x delete"
+		}
+		if s.write != nil {
+			footer += " · m new"
 		}
 		footer += " · Esc/← conversations"
 	} else {
@@ -58,6 +64,9 @@ func (s *Screen) Render(ctx *reactea.Ctx) string {
 			footer += " · N rename · A add · L leave"
 		}
 		footer += " · Esc/← conversations"
+	}
+	if s.current != nil && s.messageScrollLimit(width, room) > 0 {
+		footer = "Ctrl+D/U scroll message · " + footer
 	}
 	if s.hasMore() {
 		footer += " · M more"
@@ -88,6 +97,10 @@ func (s *Screen) renderItems(width, room int) string {
 		card := s.renderItem(index, width, index == s.index())
 		height := lipgloss.Height(card)
 		if used+height > room {
+			if used == 0 {
+				lines = append(lines, s.visibleMessageCard(card, room, index == s.index()))
+				used = room
+			}
 			break
 		}
 		lines = append(lines, card)
@@ -96,8 +109,12 @@ func (s *Screen) renderItems(width, room int) string {
 	if s.loadingMore && used < room {
 		lines = append(lines, s.theme.Dim.Render("  Loading more…"))
 	}
+	body := strings.Join(lines, "\n")
+	if padding := s.bottomPadding(width, room); padding > 0 {
+		body = strings.Repeat("\n", padding) + body
+	}
 
-	return ui.Fit(strings.Join(lines, "\n"), width, room)
+	return ui.Fit(body, width, room)
 }
 
 func (s *Screen) renderItem(index, width int, selected bool) string {
@@ -127,68 +144,6 @@ func (s *Screen) renderConversation(conversation messagedomain.MessageConversati
 			preview = "[media]"
 		}
 		lines = append(lines, "   "+s.theme.Dim.Render(ui.Clip(ui.SafeInline(preview), max(1, width-3))))
-	}
-	lines = append(lines, s.theme.Dim.Render(strings.Repeat("─", max(0, width-2))))
-
-	return strings.Join(lines, "\n")
-}
-
-func (s *Screen) renderMessage(message messagedomain.Message, width int, selected bool) string {
-	marker := " "
-	if selected {
-		marker = s.theme.Active.Render("●")
-	}
-	sender := messageSender(message)
-	time := timeLabel(message.CreatedAt)
-	if message.EditedAt != nil {
-		time += " · edited"
-	}
-	first := ui.Sides(marker+"  "+s.theme.Name.Render(sender), s.theme.Dim.Render(time), width)
-	text := strings.TrimSpace(message.Text)
-	if text == "" && len(message.Media) > 0 {
-		text = "[media]"
-	}
-	lines := []string{first}
-	if message.ReplyTo != nil {
-		reply := "Reply"
-		if message.ReplyTo.Sender != nil {
-			reply += " to @" + ui.SafeInline(message.ReplyTo.Sender.Handle)
-		}
-		preview := ui.SafeInline(message.ReplyTo.Text)
-		if message.ReplyTo.Deleted {
-			preview = "Message deleted"
-		} else if preview == "" && message.ReplyTo.HasMedia {
-			preview = "[media]"
-		}
-		lines = append(lines, "   "+s.theme.Dim.Render(ui.Clip(reply+": "+preview, max(1, width-3))))
-	}
-	wrapped := ui.WrappedLines(text, max(1, width-4))
-	for _, line := range wrapped[:min(3, len(wrapped))] {
-		lines = append(lines, "   "+line)
-	}
-	if message.Post != nil {
-		preview := ui.SafeInline(message.Post.Text)
-		if preview == "" {
-			preview = "Shared post"
-		}
-		lines = append(lines, "   "+s.theme.Dim.Render(ui.Clip("Post · "+preview, max(1, width-3))))
-	}
-	if len(message.Media) > 0 && strings.TrimSpace(message.Text) != "" {
-		lines = append(lines, "   "+s.theme.Dim.Render(fmt.Sprintf("%d media", len(message.Media))))
-	}
-	if len(message.Reactions) > 0 {
-		labels := make([]string, 0, len(message.Reactions))
-		for _, reaction := range message.Reactions {
-			label := reaction.Emoji
-			if reaction.Count > 1 {
-				label += fmt.Sprintf(" %d", reaction.Count)
-			}
-			if reaction.ReactedByViewer {
-				label = "[" + label + "]"
-			}
-			labels = append(labels, label)
-		}
-		lines = append(lines, "   "+s.theme.Dim.Render(ui.Clip(strings.Join(labels, "  "), max(1, width-3))))
 	}
 	lines = append(lines, s.theme.Dim.Render(strings.Repeat("─", max(0, width-2))))
 

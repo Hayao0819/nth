@@ -1,6 +1,7 @@
 package message
 
 import (
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
 	messagedomain "github.com/Hayao0819/nth/internal/domain"
@@ -31,6 +32,13 @@ type Screen struct {
 	messageCursor *string
 	messageIndex  int
 	messageTop    int
+	messageOffset int
+	messageAnchor messageViewAnchor
+	composer      *reactea.ReactifiedWidget[textarea.Model]
+	inputCapture  reactea.InputCapture
+	composing     bool
+	composerError string
+	submittedText string
 
 	loading     bool
 	loadingMore bool
@@ -44,7 +52,22 @@ type Screen struct {
 }
 
 func New(api messagedomain.MessageAPI, theme ui.Theme) *Screen {
-	screen := &Screen{api: api, theme: theme}
+	model := textarea.New()
+	model.Prompt = ""
+	model.Placeholder = "Write a message"
+	model.ShowLineNumbers = false
+	model.SetVirtualCursor(false)
+	styles := model.Styles()
+	styles.Focused.CursorLine = styles.Focused.CursorLine.UnsetBackground()
+	model.SetStyles(styles)
+	model.Blur()
+	composer := reactea.ReactifyWidget(model).OnResize(func(model textarea.Model, width, _ int) textarea.Model {
+		model.SetWidth(max(1, width))
+		model.SetHeight(2)
+
+		return model
+	})
+	screen := &Screen{api: api, theme: theme, composer: composer}
 	if supportsDMWriting(api) {
 		screen.write, _ = api.(messagedomain.MessageWriterAPI)
 	}
@@ -90,7 +113,7 @@ func supportsDMRecipients(api any) bool {
 }
 
 func (s *Screen) Init(ctx *reactea.Ctx) tea.Cmd {
-	return s.loadConversations(ctx.Context(), false)
+	return tea.Batch(s.composer.Init(s.composerCtx(ctx)), s.loadConversations(ctx.Context(), false))
 }
 
 var _ reactea.Component = (*Screen)(nil)

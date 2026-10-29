@@ -3,6 +3,7 @@ package message
 import (
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Hayao0819/go-north"
@@ -43,6 +44,13 @@ func (s *Screen) applyAction(ctx *reactea.Ctx, msg actionMsg) tea.Cmd {
 		return nil
 	}
 	s.acting = false
+	submittedText := ""
+	followLatest := false
+	if msg.action == actionSendMessage {
+		submittedText = s.submittedText
+		followLatest = s.atLatestMessage(ctx.Width(), s.room(ctx.Height()))
+		s.finishComposerSubmission(msg.err == nil)
+	}
 	if msg.err != nil {
 		s.notice = ui.FriendlyError(msg.err)
 
@@ -54,6 +62,19 @@ func (s *Screen) applyAction(ctx *reactea.Ctx, msg actionMsg) tea.Cmd {
 		s.current = &msg.conversation
 		s.messages = nil
 		s.messageCursor = nil
+		s.messageAnchor = messageViewAnchor{}
+
+		return s.loadMessages(ctx.Context(), false)
+	case actionSendMessage:
+		if index, ok := s.addSentMessage(msg.message, submittedText); ok {
+			if followLatest && index >= 0 {
+				s.setIndex(index)
+				s.ensureVisible(ctx.Width(), s.room(ctx.Height()))
+			}
+
+			return nil
+		}
+		s.saveMessageView(ctx.Width(), s.room(ctx.Height()))
 
 		return s.loadMessages(ctx.Context(), false)
 	case actionDeleteMessage:
@@ -61,9 +82,12 @@ func (s *Screen) applyAction(ctx *reactea.Ctx, msg actionMsg) tea.Cmd {
 			return message.ID == msg.message.ID
 		})
 		s.messageIndex = min(s.messageIndex, max(0, len(s.messages)-1))
+		s.messageOffset = 0
 		s.ensureVisible(ctx.Width(), s.room(ctx.Height()))
 	case actionSetReaction, actionRemoveReaction:
 		if len(msg.reactions) == 0 {
+			s.saveMessageView(ctx.Width(), s.room(ctx.Height()))
+
 			return s.loadMessages(ctx.Context(), false)
 		}
 		for index := range s.messages {
@@ -76,17 +100,74 @@ func (s *Screen) applyAction(ctx *reactea.Ctx, msg actionMsg) tea.Cmd {
 		s.current = nil
 		s.messages = nil
 		s.messageCursor = nil
+		s.messageAnchor = messageViewAnchor{}
 
 		return s.loadConversations(ctx.Context(), false)
 	case actionRenameConversation:
 		if s.current != nil {
 			s.current.Name = msg.conversation.Name
 		}
-	case actionSendMessage, actionEditMessage, actionAddMembers:
+	case actionEditMessage, actionAddMembers:
+		s.saveMessageView(ctx.Width(), s.room(ctx.Height()))
+
 		return s.loadMessages(ctx.Context(), false)
 	}
 
 	return nil
+}
+
+func (s *Screen) addSentMessage(message north.DMMessage, fallbackText string) (int, bool) {
+	if strings.TrimSpace(message.ID) == "" {
+		return 0, false
+	}
+	if message.Text == "" {
+		message.Text = fallbackText
+	}
+	if message.Sender.ID == "" && message.Sender.Handle == "" && message.Sender.Name == "" {
+		message.Sender = s.viewer
+	}
+	if message.CreatedAt.IsZero() {
+		message.CreatedAt = time.Now()
+	}
+	conversationID := message.ConversationID
+	if conversationID == "" && s.current != nil {
+		conversationID = s.current.ID
+		message.ConversationID = conversationID
+	}
+	if s.current == nil || s.current.ID != conversationID {
+		s.updateConversationPreview(conversationID, message)
+
+		return -1, true
+	}
+
+	index := slices.IndexFunc(s.messages, func(current north.DMMessage) bool {
+		return current.ID == message.ID
+	})
+	if index >= 0 {
+		s.messages[index] = message
+	} else {
+		s.messages = append(s.messages, message)
+		index = len(s.messages) - 1
+	}
+	if s.current != nil {
+		copy := message
+		s.current.LastMessage = &copy
+		s.current.UpdatedAt = message.CreatedAt
+	}
+	s.updateConversationPreview(conversationID, message)
+
+	return index, true
+}
+
+func (s *Screen) updateConversationPreview(conversationID string, message north.DMMessage) {
+	for conversationIndex := range s.conversations {
+		if s.conversations[conversationIndex].ID != conversationID {
+			continue
+		}
+		copy := message
+		s.conversations[conversationIndex].LastMessage = &copy
+		s.conversations[conversationIndex].UpdatedAt = message.CreatedAt
+	}
 }
 
 func (s *Screen) startAction(notice string) {

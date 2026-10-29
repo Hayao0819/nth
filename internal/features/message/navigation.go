@@ -12,18 +12,25 @@ import (
 )
 
 func (s *Screen) back() tea.Cmd {
+	s.composing = false
+	s.composer.Widget.Blur()
+	s.composer.Widget.SetValue("")
+	s.composerError = ""
+	s.submittedText = ""
+	release := s.inputCapture.ReleaseInput()
 	if s.current != nil {
 		s.current = nil
 		s.messages = nil
 		s.messageCursor = nil
-		s.messageIndex, s.messageTop = 0, 0
+		s.messageIndex, s.messageTop, s.messageOffset = 0, 0, 0
+		s.messageAnchor = messageViewAnchor{}
 		s.err = nil
 		s.notice = ""
 
-		return nil
+		return release
 	}
 
-	return pageheader.Back()
+	return tea.Batch(release, pageheader.Back())
 }
 
 func (s *Screen) toggleRequests(ctx context.Context) tea.Cmd {
@@ -40,12 +47,16 @@ func (s *Screen) toggleRequests(ctx context.Context) tea.Cmd {
 	return s.loadConversations(ctx, false)
 }
 
-func (s *Screen) loadNearEnd(ctx context.Context) tea.Cmd {
-	if s.itemCount()-s.index() > 3 {
-		return nil
-	}
+func (s *Screen) loadNearEdge(ctx context.Context) tea.Cmd {
 	if s.current == nil {
+		if s.itemCount()-s.index() > 3 {
+			return nil
+		}
+
 		return s.loadConversations(ctx, true)
+	}
+	if s.index() > 2 {
+		return nil
 	}
 
 	return s.loadMessages(ctx, true)
@@ -63,12 +74,43 @@ func (s *Screen) ensureVisible(width, room int) {
 	s.setTop(listview.EnsureVisible(s.top(), s.index(), s.itemCount(), room, func(index int) int {
 		return lipgloss.Height(s.renderItem(index, width, index == s.index()))
 	}))
+	s.clampMessageOffset(width, room)
 }
 
 func (s *Screen) itemPositionAt(row, width, room int) (int, int, bool) {
+	row -= s.bottomPadding(width, room)
+	if row < 0 || row >= room {
+		return 0, 0, false
+	}
+	if s.current != nil && s.itemCount() > 0 && s.top() == s.index() {
+		height := lipgloss.Height(s.renderItem(s.index(), width, true))
+		if height > room {
+			return s.index(), row + s.messageOffset, true
+		}
+	}
+
 	return listview.ItemPositionAt(s.top(), s.itemCount(), row, room, func(index int) int {
 		return lipgloss.Height(s.renderItem(index, width, index == s.index()))
 	})
+}
+
+func (s *Screen) bottomPadding(width, room int) int {
+	if s.current == nil || s.loadingMore || s.index() != s.itemCount()-1 {
+		return 0
+	}
+	used := 0
+	for index := s.top(); index < s.itemCount(); index++ {
+		height := lipgloss.Height(s.renderItem(index, width, index == s.index()))
+		if used+height > room {
+			if used == 0 {
+				return 0
+			}
+			break
+		}
+		used += height
+	}
+
+	return max(0, room-used)
 }
 
 func (s *Screen) itemCount() int {
@@ -91,6 +133,9 @@ func (s *Screen) setIndex(index int) {
 	if s.current == nil {
 		s.conversationIndex = index
 	} else {
+		if s.messageIndex != index {
+			s.messageOffset = 0
+		}
 		s.messageIndex = index
 	}
 }
@@ -129,5 +174,10 @@ func (s *Screen) selectedSender() (north.User, bool) {
 }
 
 func (s *Screen) room(height int) int {
-	return max(0, height-pageheader.Height-1)
+	footerHeight := 1
+	if s.composerVisible() {
+		footerHeight = composerHeight
+	}
+
+	return max(0, height-pageheader.Height-footerHeight)
 }
