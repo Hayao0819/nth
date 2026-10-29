@@ -33,7 +33,7 @@
                         pname = "nth-check";
                         version = "0";
                         src = self;
-                        vendorHash = "sha256-SprNftkQaXWMfk0E+aQPqxLgnTwTVJ4pHN/hCrFwbcs=";
+                        vendorHash = "sha256-AiAaf2fYxUyIhVd7xu2frBVEgh5g/x7/bmaO5kQTOuk=";
                         env = {
                             CGO_ENABLED = "1";
                             GOWORK = "off";
