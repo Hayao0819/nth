@@ -40,6 +40,8 @@ func (r *root) handleInput(ctx *reactea.Ctx, msg tea.Msg) tea.Cmd {
 		)
 	case reactea.Key(msg, "c", "n"):
 		return r.compose(ctx, nil, nil)
+	case r.messages != nil && r.page.kind != messagesPage && reactea.Key(msg, "m"):
+		return r.openMessages(ctx)
 	case reactea.Key(msg, "/"):
 		return r.search(ctx)
 	case reactea.Key(msg, "1"):

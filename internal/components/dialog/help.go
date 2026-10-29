@@ -97,6 +97,11 @@ type helpItem struct {
 	description string
 }
 
+type helpGroup struct {
+	title string
+	items []helpItem
+}
+
 func helpLines(theme ui.Theme, width int, notifications, messages, bookmarks bool) []string {
 	timelineItems := []helpItem{
 		{"1", "Open Home"},
@@ -106,16 +111,13 @@ func helpLines(theme ui.Theme, width int, notifications, messages, bookmarks boo
 		timelineItems = append(timelineItems, helpItem{"2 / v", "Open notifications"})
 	}
 	if messages {
-		timelineItems = append(timelineItems, helpItem{"3", "Open messages"})
+		timelineItems = append(timelineItems, helpItem{"3 / m", "Open messages"})
 	}
 	if bookmarks {
 		timelineItems = append(timelineItems, helpItem{"4", "Open bookmarks"})
 	}
 	timelineItems = append(timelineItems, helpItem{"6–0", "Search a trend from the right column"})
-	groups := []struct {
-		title string
-		items []helpItem
-	}{
+	groups := []helpGroup{
 		{"TIMELINES", timelineItems},
 		{"NAVIGATION", []helpItem{
 			{"j / k · ↑ / ↓", "Move the selection"},
@@ -151,6 +153,20 @@ func helpLines(theme ui.Theme, width int, notifications, messages, bookmarks boo
 			{"nth setup", "Configure authentication credentials"},
 			{"Credentials", "Saved in the current user's system keyring"},
 		}},
+	}
+	if messages {
+		other := groups[len(groups)-1]
+		groups[len(groups)-1] = helpGroup{
+			title: "MESSAGES",
+			items: []helpItem{
+				{"m", "Start a new Direct Message from Messages"},
+				{"Enter / click", "Focus the message box"},
+				{"Enter", "Send while the message box is focused"},
+				{"Esc", "Leave the message box without clearing its draft"},
+				{"Ctrl+D/U", "Scroll through a message taller than the viewport"},
+			},
+		}
+		groups = append(groups, other)
 	}
 
 	var lines []string

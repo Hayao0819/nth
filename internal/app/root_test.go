@@ -70,6 +70,36 @@ func TestRootNavigationSearchAndCompose(t *testing.T) {
 	}
 }
 
+func TestMessageShortcutOpensMessages(t *testing.T) {
+	t.Parallel()
+
+	service := &messageNavigationAPI{fakeAPI: &fakeAPI{}}
+	root := newRoot(service)
+	program := reactea.New(modal.New(root), reactea.WithSize(80, 24))
+	program.Start()
+
+	testkit.SendKeys(program, "m")
+	if root.page.kind != messagesPage {
+		t.Fatalf("m opened page %v, want messages", root.page.kind)
+	}
+}
+
+type messageNavigationAPI struct {
+	*fakeAPI
+}
+
+func (*messageNavigationAPI) DMConversations(context.Context, string, bool) (north.DMConversationPage, *north.Response, error) {
+	return north.DMConversationPage{}, nil, nil
+}
+
+func (*messageNavigationAPI) DMMessages(context.Context, string, string) (north.DMMessagePage, *north.Response, error) {
+	return north.DMMessagePage{}, nil, nil
+}
+
+func (*messageNavigationAPI) MarkDMRead(context.Context, string) (*north.Response, error) {
+	return nil, nil
+}
+
 func TestPostAndProfileOpenInBrowser(t *testing.T) {
 	t.Parallel()
 
